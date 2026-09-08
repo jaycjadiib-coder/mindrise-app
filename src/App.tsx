@@ -202,7 +202,7 @@ const MainAppContent: React.FC = () => {
         />
 
         {/* View Content Area */}
-        <main className={`flex-1 overflow-y-auto ${getMainBg()}`}>
+        <main className={`flex-1 overflow-y-auto pb-24 md:pb-6 ${getMainBg()}`}>
           <div className={`mx-auto w-full ${activeTab === 'explore' ? 'max-w-[1800px] px-3 sm:px-5 lg:px-7 py-5' : 'max-w-7xl px-4 sm:px-6 lg:px-8 py-6'}`}>
             {renderActiveView()}
           </div>
@@ -215,23 +215,24 @@ const MainAppContent: React.FC = () => {
         <MobileNav activeTab={activeTab} setActiveTab={setActiveTab} />
       </div>
 
-      {/* Floating Free Query Bot & Chatbot Button */}
+      {/* Floating Groq AI Assistant Button - safely positioned above mobile bottom bar */}
       <button
+        id="floating-ai-mentor-btn"
         onClick={() => setIsAIChatOpen(true)}
-        className="fixed bottom-6 right-6 z-40 flex items-center gap-2.5 rounded-full bg-[#1A1A1A] text-[#FAF8F5] px-4 py-3 shadow-2xl border border-[#403B32]/40 hover:bg-[#333] hover:scale-105 active:scale-95 transition-all group font-sans"
-        title="Open Free Query Bot & Scholar Assistant"
-        aria-label="Open Query Bot"
+        className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-30 flex items-center gap-2.5 rounded-full bg-[#1A1A1A] text-[#FAF8F5] px-3.5 py-2.5 sm:px-4 sm:py-3 shadow-2xl border border-[#403B32]/40 hover:bg-[#333] hover:scale-105 active:scale-95 transition-all group font-sans"
+        title="Open MindRise AI Mentor (Groq)"
+        aria-label="Open AI Assistant"
       >
-        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-          <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
+        <div className="flex h-5 w-5 sm:h-6 sm:w-6 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+          <Sparkles className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-emerald-400" />
         </div>
-        <span className="text-xs font-semibold tracking-wide">Query Bot</span>
+        <span className="text-xs font-semibold tracking-wide">AI Mentor</span>
         <span className="hidden sm:inline rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 px-2 py-0.5 text-[9px] font-mono font-medium">
-          Free
+          Groq AI
         </span>
       </button>
 
-      {/* Slide-out Free Query Bot Assistant Drawer (dismiss on outside click or ESC) */}
+      {/* Slide-out Groq AI Assistant Drawer (dismiss on outside click or ESC) */}
       <AIChatDrawer
         isOpen={isAIChatOpen}
         onClose={() => setIsAIChatOpen(false)}

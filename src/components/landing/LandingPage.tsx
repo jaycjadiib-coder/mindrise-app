@@ -165,9 +165,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     },
     {
       icon: Brain,
-      badge: '100% Free Engine',
-      title: 'MindRise Free Query Bot',
-      desc: 'Ask questions, query 8.5M+ books, get instant chapter summaries, habit guidance, and reading insights completely free without subscriptions or API keys.'
+      badge: 'Groq • Llama 3.3 70B',
+      title: 'MindRise AI Mentor',
+      desc: 'Ask deep literary questions, query 8.5M+ books, receive instant philosophical breakdowns, and generate custom habit protocols powered by Groq Llama 3.3 70B.'
     },
     {
       icon: Flame,
@@ -248,8 +248,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       a: 'Yes! Every book includes synchronized audio narration so you can listen hands-free while walking, commuting, or relaxing.'
     },
     {
-      q: 'How does the MindRise Free Query Bot work?',
-      a: 'The built-in Query Bot helps explain complex philosophical ideas, summarizes chapters, answers book questions, and suggests thoughtful study routines — 100% free with no paid API keys required.'
+      q: 'How does the MindRise AI Mentor work?',
+      a: 'The built-in AI Mentor connects directly to high-speed Groq AI (Llama 3.3 70B) to explain complex philosophical ideas, summarize book chapters, answer literary questions, and construct personalized study & habit blueprints.'
     },
     {
       q: 'Can I use MindRise on my mobile phone or tablet?',
