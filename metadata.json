@@ -1,0 +1,6 @@
+{
+  "name": "MindRise",
+  "description": "Universal open library with 8.5 million+ books across all languages, distraction-free reader, audio narration, and AI literary companion.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

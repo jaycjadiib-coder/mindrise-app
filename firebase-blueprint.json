@@ -1,0 +1,93 @@
+{
+  "entities": {
+    "users": {
+      "fields": {
+        "id": { "type": "string", "description": "User UID" },
+        "name": { "type": "string", "description": "Display name" },
+        "email": { "type": "string", "description": "User email" },
+        "currentStreak": { "type": "number", "description": "Current active streak in days" },
+        "longestStreak": { "type": "number", "description": "Longest consecutive streak" },
+        "totalReadingMinutes": { "type": "number", "description": "Total minutes spent reading" },
+        "totalPagesRead": { "type": "number", "description": "Total pages read across books" },
+        "totalBooksCompleted": { "type": "number", "description": "Count of completed books" },
+        "updatedAt": { "type": "string", "description": "Last updated ISO date" }
+      }
+    },
+    "users/{userId}/habits": {
+      "fields": {
+        "id": { "type": "string", "description": "Habit ID" },
+        "name": { "type": "string", "description": "Habit name or ritual" },
+        "category": { "type": "string", "description": "Habit category" },
+        "frequency": { "type": "string", "description": "daily or weekly" },
+        "currentStreak": { "type": "number", "description": "Current streak in days" },
+        "bestStreak": { "type": "number", "description": "Longest streak achieved" },
+        "color": { "type": "string", "description": "Display color theme" },
+        "createdAt": { "type": "string", "description": "Creation ISO date" }
+      }
+    },
+    "users/{userId}/habitLogs": {
+      "fields": {
+        "id": { "type": "string", "description": "Composite key {habitId}_{dateStr}" },
+        "habitId": { "type": "string", "description": "Reference habit ID" },
+        "date": { "type": "string", "description": "YYYY-MM-DD date" },
+        "completed": { "type": "boolean", "description": "Completion flag" },
+        "completedAt": { "type": "string", "description": "ISO timestamp" }
+      }
+    },
+    "users/{userId}/journal": {
+      "fields": {
+        "id": { "type": "string", "description": "Journal entry ID" },
+        "userId": { "type": "string", "description": "User UID" },
+        "date": { "type": "string", "description": "YYYY-MM-DD date" },
+        "bookId": { "type": "string", "description": "Associated book ID" },
+        "content": { "type": "string", "description": "Freeform journal thoughts" },
+        "prompts": { "type": "array", "description": "Structured questions and answers" },
+        "mood": { "type": "string", "description": "Daily mood" },
+        "aiAnalysis": { "type": "string", "description": "Reflection analysis summary" },
+        "createdAt": { "type": "string", "description": "Creation ISO timestamp" },
+        "updatedAt": { "type": "string", "description": "Updated ISO timestamp" }
+      }
+    },
+    "users/{userId}/library": {
+      "fields": {
+        "id": { "type": "string", "description": "Library item record ID" },
+        "bookId": { "type": "string", "description": "Book ID" },
+        "shelf": { "type": "string", "description": "currently-reading, want-to-read, completed, favorites" },
+        "addedAt": { "type": "string", "description": "Added ISO timestamp" },
+        "updatedAt": { "type": "string", "description": "Updated ISO timestamp" }
+      }
+    },
+    "users/{userId}/readingProgress": {
+      "fields": {
+        "bookId": { "type": "string", "description": "Book ID" },
+        "currentPage": { "type": "number", "description": "Current page number" },
+        "totalPages": { "type": "number", "description": "Total pages in book" },
+        "percentage": { "type": "number", "description": "Completion percentage" },
+        "minutesSpent": { "type": "number", "description": "Total minutes spent on this book" },
+        "completed": { "type": "boolean", "description": "Completed flag" },
+        "lastReadAt": { "type": "string", "description": "Last read ISO timestamp" }
+      }
+    },
+    "users/{userId}/archiveLibrary": {
+      "fields": {
+        "identifier": { "type": "string", "description": "Archive item identifier" },
+        "title": { "type": "string", "description": "Book title" },
+        "creator": { "type": "string", "description": "Author name" },
+        "coverUrl": { "type": "string", "description": "Cover thumbnail URL" },
+        "addedAt": { "type": "string", "description": "Added ISO timestamp" },
+        "shelf": { "type": "string", "description": "Reading status shelf" }
+      }
+    },
+    "users/{userId}/notes": {
+      "fields": {
+        "id": { "type": "string", "description": "Note ID" },
+        "bookId": { "type": "string", "description": "Book reference ID" },
+        "chapterTitle": { "type": "string", "description": "Chapter name" },
+        "content": { "type": "string", "description": "Note content" },
+        "type": { "type": "string", "description": "note, highlight, insight" },
+        "tags": { "type": "array", "description": "Tag labels" },
+        "createdAt": { "type": "string", "description": "ISO date" }
+      }
+    }
+  }
+}
