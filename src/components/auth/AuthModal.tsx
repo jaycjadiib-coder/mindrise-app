@@ -135,13 +135,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         <div className="pointer-events-none absolute -top-20 -right-20 w-48 h-48 bg-violet-600/20 blur-3xl rounded-full" />
         <div className="pointer-events-none absolute -bottom-20 -left-20 w-48 h-48 bg-blue-600/20 blur-3xl rounded-full" />
 
-        {/* Close Button */}
+        {/* Close Button (Wrong / Cross 'X' Button) */}
         <button
-          onClick={onClose}
-          className="absolute top-5 right-5 rounded-full p-2 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+          type="button"
+          id="auth-modal-close-button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onClose();
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onClose();
+          }}
+          className="absolute top-4 right-4 z-50 flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-full bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white active:scale-90 transition-all cursor-pointer border border-white/10 shadow-lg pointer-events-auto"
           aria-label="Close modal"
+          title="Close"
         >
-          <X className="h-5 w-5" />
+          <X className="h-5 w-5 pointer-events-none" />
         </button>
 
         {/* Brand Header */}

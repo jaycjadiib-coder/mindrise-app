@@ -11,12 +11,11 @@ import {
   FileText,
   Globe,
   Lock,
-  Volume2,
-  VolumeX,
   Sparkles,
   Info,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -40,36 +39,30 @@ export const ArchiveBookDetailsModal: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [showTip, setShowTip] = useState(false);
 
-  const stopAudio = React.useCallback(() => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
-    setIsPlayingAudio(false);
-  }, []);
-
-  // Close on Escape key & cleanup audio on unmount/close
+  // Close on Escape key
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        stopAudio();
-        closeArchiveBookDetails();
+        if (showTip) {
+          setShowTip(false);
+        } else {
+          closeArchiveBookDetails();
+        }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('keydown', onKey);
-      stopAudio();
     };
-  }, [closeArchiveBookDetails, stopAudio]);
+  }, [closeArchiveBookDetails, showTip]);
 
   // Fetch metadata on demand when activeArchiveBookId changes
   useEffect(() => {
     if (!activeArchiveBookId) {
       setMetadata(null);
       setError(null);
-      stopAudio();
       return;
     }
 
@@ -95,31 +88,12 @@ export const ArchiveBookDetailsModal: React.FC = () => {
     return () => {
       isSubscribed = false;
     };
-  }, [activeArchiveBookId, stopAudio]);
+  }, [activeArchiveBookId]);
 
   if (!activeArchiveBookId) return null;
 
   const isSaved = Boolean(archiveLibrary[activeArchiveBookId]);
   const prog = archiveProgress[activeArchiveBookId];
-
-  const handleToggleListen = () => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window) || !metadata) return;
-
-    if (isPlayingAudio) {
-      stopAudio();
-    } else {
-      window.speechSynthesis.cancel();
-      const textToRead = `${metadata.title}। लेखक: ${metadata.creator}। ${metadata.description || 'पुस्तक विवरण लोड हो रहा है।'}`;
-      const utterance = new SpeechSynthesisUtterance(textToRead);
-      utterance.lang = metadata.language.includes('hin') ? 'hi-IN' : 'en-US';
-      utterance.rate = 1.0;
-      utterance.onend = () => setIsPlayingAudio(false);
-      utterance.onerror = () => setIsPlayingAudio(false);
-
-      window.speechSynthesis.speak(utterance);
-      setIsPlayingAudio(true);
-    }
-  };
 
   const handleShare = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -147,7 +121,12 @@ export const ArchiveBookDetailsModal: React.FC = () => {
 
   const handleReadNow = () => {
     if (!metadata) return;
-    stopAudio();
+    setShowTip(true);
+  };
+
+  const handleProceedToReader = () => {
+    if (!metadata) return;
+    setShowTip(false);
     closeArchiveBookDetails();
     openArchiveReader({
       identifier: metadata.identifier,
@@ -174,7 +153,6 @@ export const ArchiveBookDetailsModal: React.FC = () => {
   return (
     <div
       onClick={() => {
-        stopAudio();
         closeArchiveBookDetails();
       }}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs cursor-pointer animate-in fade-in duration-150 font-sans"
@@ -208,10 +186,9 @@ export const ArchiveBookDetailsModal: React.FC = () => {
 
             <button
               onClick={() => {
-                stopAudio();
                 closeArchiveBookDetails();
               }}
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-black/10 dark:border-white/10 opacity-70 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/5 transition-all"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-black/10 dark:border-white/10 opacity-70 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/5 transition-all cursor-pointer"
               title="Close (Esc)"
             >
               <X className="h-4 w-4" />
@@ -353,19 +330,6 @@ export const ArchiveBookDetailsModal: React.FC = () => {
                       {isSaved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
                       <span>{isSaved ? 'In Library' : 'Add to Library'}</span>
                     </button>
-
-                    <button
-                      onClick={handleToggleListen}
-                      className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-medium transition-all ${
-                        isPlayingAudio
-                          ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 animate-pulse'
-                          : 'border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 hover:bg-black/10'
-                      }`}
-                      title="Listen via Text-To-Speech"
-                    >
-                      {isPlayingAudio ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-                      <span>{isPlayingAudio ? 'Stop Audio' : 'Listen'}</span>
-                    </button>
                   </div>
 
                   {/* Summary / Description */}
@@ -439,6 +403,47 @@ export const ArchiveBookDetailsModal: React.FC = () => {
             </>
           )}
         </div>
+        
+        {/* Onboarding Tip Overlay */}
+        {showTip && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="flex w-full max-w-sm flex-col items-center justify-center space-y-6 rounded-3xl bg-stone-900 border border-white/10 p-8 shadow-2xl text-center">
+              <div className="rounded-full bg-amber-500/20 p-4">
+                <AlertCircle className="h-10 w-10 text-amber-500" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="font-serif text-xl font-bold text-white leading-tight">
+                  IF PDF NOT LOADING SHIFT THIS ICONS
+                </h3>
+                <p className="text-xs text-stone-400 font-medium leading-relaxed">
+                  Look for these icons in the top bar to switch to High Quality Scanned Images or Clean Text if the native PDF fails to load.
+                </p>
+              </div>
+              
+              <div className="flex items-center gap-2 p-2 rounded-full border border-white/10 bg-[#1A1A1A] text-xs font-medium text-stone-300 pointer-events-none opacity-80">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500 text-stone-950 font-medium">
+                  <ImageIcon className="h-3.5 w-3.5" />
+                  <span>HQ Scan</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-1.5">
+                  <FileText className="h-3.5 w-3.5" />
+                  <span>Clean Text</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-1.5">
+                  <BookOpen className="h-3.5 w-3.5" />
+                  <span>Vector PDF</span>
+                </div>
+              </div>
+
+              <button
+                onClick={handleProceedToReader}
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-5 py-3 text-sm font-bold text-black hover:bg-amber-400 transition-all shadow-md"
+              >
+                <span>GOT IT, OPEN BOOK</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

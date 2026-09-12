@@ -15,8 +15,14 @@ import {
 import confetti from 'canvas-confetti';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
+import { BackButton } from '../common/BackButton';
 
-export const UserProfile: React.FC = () => {
+interface UserProfileProps {
+  onBack?: () => void;
+  setActiveTab?: (tab: string) => void;
+}
+
+export const UserProfile: React.FC<UserProfileProps> = ({ onBack }) => {
   const { user, isAdmin, logout, updateUserProfile } = useAuth();
   const { stats } = useData();
 
@@ -68,13 +74,16 @@ export const UserProfile: React.FC = () => {
     <div className="space-y-8 pb-16 max-w-4xl mx-auto">
       {/* Header */}
       <div className="flex flex-col justify-between gap-4 border-b border-emerald-950/40 pb-6 sm:flex-row sm:items-center">
-        <div>
-          <h1 className="font-serif text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Scholar Profile & Settings
-          </h1>
-          <p className="mt-1 text-xs text-stone-400">
-            Manage your intellectual identity, daily reading quotas, and personalized growth vectors.
-          </p>
+        <div className="flex flex-wrap items-center gap-3">
+          {onBack && <BackButton onClick={onBack} />}
+          <div>
+            <h1 className="font-serif text-3xl font-bold tracking-tight text-white sm:text-4xl">
+              Scholar Profile & Settings
+            </h1>
+            <p className="mt-1 text-xs text-stone-400">
+              Manage your intellectual identity, daily reading quotas, and personalized growth vectors.
+            </p>
+          </div>
         </div>
 
         <button

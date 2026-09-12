@@ -6,10 +6,7 @@ import {
   Type,
   ChevronLeft,
   ChevronRight,
-  Volume2,
-  VolumeX,
   Play,
-  Pause,
   Sparkles,
   AlignLeft,
   AlignJustify,
@@ -66,10 +63,6 @@ export const BookReader: React.FC = () => {
   const [showAaMenu, setShowAaMenu] = useState<boolean>(false);
   const [showToc, setShowToc] = useState<boolean>(false);
   const [showHelp, setShowHelp] = useState<boolean>(false);
-
-  // Audio Speech state
-  const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
-  const [speechRate, setSpeechRate] = useState<number>(1.0);
 
   const readerStageRef = useRef<HTMLDivElement>(null);
   const lastSavedPageRef = useRef<number | null>(null);
@@ -254,39 +247,6 @@ export const BookReader: React.FC = () => {
   }, []);
 
   // Clean Audio TTS on unmount or page change
-  const stopAudio = React.useCallback(() => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
-    setIsPlayingAudio(false);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      stopAudio();
-    };
-  }, [stopAudio]);
-
-  const toggleAudioTTS = () => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-
-    if (isPlayingAudio) {
-      stopAudio();
-    } else {
-      stopAudio();
-      const textToSpeak = `${activeChapter?.title || book.title}। पृष्ठ संख्या ${currentPage}। ${pageParagraphs.join('। ')}`;
-      const utterance = new SpeechSynthesisUtterance(textToSpeak);
-      utterance.lang = 'hi-IN';
-      utterance.rate = speechRate;
-      utterance.pitch = 1.0;
-      utterance.onend = () => setIsPlayingAudio(false);
-      utterance.onerror = () => setIsPlayingAudio(false);
-
-      window.speechSynthesis.speak(utterance);
-      setIsPlayingAudio(true);
-    }
-  };
-
   // Dynamic style calculations
   const actualFontSize = 14 + fontSizeStep * 2; // 16px to 28px
 
@@ -357,10 +317,9 @@ export const BookReader: React.FC = () => {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => {
-                  stopAudio();
                   closeReader();
                 }}
-                className="flex items-center gap-1.5 rounded-xl border border-black/10 px-3 py-1.5 text-xs font-semibold hover:bg-black/5 transition"
+                className="flex items-center gap-1.5 rounded-xl border border-black/10 px-3 py-1.5 text-xs font-semibold hover:bg-black/5 transition cursor-pointer"
                 title="Exit reader and return to library"
               >
                 <ArrowLeft className="h-4 w-4" />
@@ -373,30 +332,8 @@ export const BookReader: React.FC = () => {
               </div>
             </div>
 
-            {/* Right: Audio Narration, Aa Menu, TOC, Bookmark */}
+            {/* Right: Aa Menu, TOC, Bookmark */}
             <div className="flex items-center gap-1.5 sm:gap-2">
-              {/* TTS Audio Player */}
-              <button
-                onClick={toggleAudioTTS}
-                className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold border transition ${
-                  isPlayingAudio
-                    ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                    : 'border-black/10 hover:bg-black/5'
-                }`}
-                title="Hindi Text-to-Speech audio reader"
-              >
-                {isPlayingAudio ? (
-                  <>
-                    <VolumeX className="h-3.5 w-3.5 animate-pulse" />
-                    <span className="hidden sm:inline">Pause Narration</span>
-                  </>
-                ) : (
-                  <>
-                    <Volume2 className="h-3.5 w-3.5 text-amber-700" />
-                    <span className="hidden sm:inline">Audio</span>
-                  </>
-                )}
-              </button>
 
               {/* Aa Typography & Theme Menu */}
               <button
@@ -770,6 +707,7 @@ export const BookReader: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
     </div>
   );
 };

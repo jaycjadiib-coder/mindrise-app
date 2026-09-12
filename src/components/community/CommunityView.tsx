@@ -17,6 +17,8 @@ import confetti from 'canvas-confetti';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 
+import { BackButton } from '../common/BackButton';
+
 interface Comment {
   id: string;
   author: string;
@@ -40,7 +42,12 @@ interface Post {
   isLiked?: boolean;
 }
 
-export const CommunityView: React.FC = () => {
+interface CommunityViewProps {
+  onBack?: () => void;
+  setActiveTab?: (tab: string) => void;
+}
+
+export const CommunityView: React.FC<CommunityViewProps> = ({ onBack }) => {
   const { user } = useAuth();
   const { books } = useData();
 
@@ -248,18 +255,21 @@ export const CommunityView: React.FC = () => {
     <div className="space-y-8 pb-16 font-sans">
       {/* Header */}
       <div className="flex flex-col justify-between gap-4 border-b border-black/10 dark:border-stone-800 pb-6 sm:flex-row sm:items-center">
-        <div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="rounded-full bg-amber-500/10 dark:bg-amber-500/20 text-amber-900 dark:text-amber-300 border border-amber-500/30 px-3 py-0.5 text-[10px] font-mono font-semibold">
-              BHARAT SCHOLARS CIRCLE • 6,500+ READERS
-            </span>
+        <div className="flex flex-wrap items-center gap-3">
+          {onBack && <BackButton onClick={onBack} />}
+          <div>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="rounded-full bg-amber-500/10 dark:bg-amber-500/20 text-amber-900 dark:text-amber-300 border border-amber-500/30 px-3 py-0.5 text-[10px] font-mono font-semibold">
+                BHARAT SCHOLARS CIRCLE • 6,500+ READERS
+              </span>
+            </div>
+            <h1 className="font-serif text-3xl font-bold tracking-tight text-stone-900 dark:text-white sm:text-4xl">
+              Community & Book Clubs (भारतीय स्वाध्याय समाज)
+            </h1>
+            <p className="mt-1 text-xs text-stone-600 dark:text-stone-400">
+              हिंदी साहित्य, दर्शनशास्त्र और ज्ञान-साधना में लीन स्वाध्यायियों का विचार मंच। अपने विचार साझा करें।
+            </p>
           </div>
-          <h1 className="font-serif text-3xl font-bold tracking-tight text-stone-900 dark:text-white sm:text-4xl">
-            Community & Book Clubs (भारतीय स्वाध्याय समाज)
-          </h1>
-          <p className="mt-1 text-xs text-stone-600 dark:text-stone-400">
-            हिंदी साहित्य, दर्शनशास्त्र और ज्ञान-साधना में लीन स्वाध्यायियों का विचार मंच। अपने विचार साझा करें।
-          </p>
         </div>
 
         <button

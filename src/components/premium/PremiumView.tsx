@@ -12,8 +12,14 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAuth } from '../../context/AuthContext';
+import { BackButton } from '../common/BackButton';
 
-export const PremiumView: React.FC = () => {
+interface PremiumViewProps {
+  onBack?: () => void;
+  setActiveTab?: (tab: string) => void;
+}
+
+export const PremiumView: React.FC<PremiumViewProps> = ({ onBack }) => {
   const { user, updateUserProfile } = useAuth();
   const [billingCycle, setBillingCycle] = useState<'annual' | 'monthly'>('annual');
   const [upgrading, setUpgrading] = useState(false);
@@ -39,9 +45,15 @@ export const PremiumView: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-12 pb-16">
+    <div className="space-y-12 pb-16 font-sans">
+      {onBack && (
+        <div className="flex justify-start">
+          <BackButton onClick={onBack} />
+        </div>
+      )}
+
       {/* Header */}
-      <div className="text-center max-w-2xl mx-auto pt-6">
+      <div className="text-center max-w-2xl mx-auto pt-2">
         <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-950/20 px-3.5 py-1.5 text-xs text-amber-300">
           <Crown className="h-4 w-4 text-amber-400" />
           <span>MindRise Black Membership</span>

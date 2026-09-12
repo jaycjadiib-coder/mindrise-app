@@ -92,3 +92,46 @@
   background: #E5E2DA;
   color: #1A1A1A;
 }
+
+/* PDF.js Text Layer styling */
+.textLayer {
+  position: absolute;
+  text-align: initial;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  opacity: 0.25;
+  line-height: 1;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 2;
+  user-select: text;
+  -webkit-user-select: text;
+  pointer-events: auto;
+}
+
+.textLayer span,
+.textLayer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.textLayer ::selection {
+  background: rgba(59, 130, 246, 0.45);
+  color: transparent;
+}
+
+.textLayer .highlight {
+  background-color: rgba(234, 179, 8, 0.55);
+  border-radius: 2px;
+}
+
+.textLayer .highlight.selected {
+  background-color: rgba(249, 115, 22, 0.7);
+}

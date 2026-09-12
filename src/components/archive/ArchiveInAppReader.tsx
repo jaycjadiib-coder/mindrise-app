@@ -1,38 +1,47 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import {
   ArrowLeft,
-  Sun,
   ChevronLeft,
   ChevronRight,
   Bookmark,
   BookmarkCheck,
-  Volume2,
-  VolumeX,
   Maximize2,
   Minimize2,
   ZoomIn,
   ZoomOut,
   RotateCcw,
   Loader2,
-  Check,
-  Moon,
   Eye,
-  Sparkles,
-  Play,
-  Square,
-  AudioLines,
-  Languages,
   Sliders,
-  FileText
+  Search,
+  Layers,
+  Columns,
+  SquareMinus,
+  X,
+  Image as ImageIcon,
+  FileText,
+  BookOpen,
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
-import { ArchiveItemMetadata, ArchiveReadingProgress } from '../../types/archive';
+import { ArchiveReadingProgress } from '../../types/archive';
 import {
-  getArchiveItemMetadata,
-  getLanguageName
-} from '../../services/internetArchiveService';
+  BookRepresentationResult,
+  BookRepresentationType,
+} from '../../types/representation';
+import {
+  detectBookRepresentation,
+  getNextFallbackRepresentation,
+} from '../../services/bookRepresentationService';
+import { PdfDocumentViewer, PdfViewerHandle } from './PdfDocumentViewer';
+import { ImageStackReader } from './renderers/ImageStackReader';
+import { BookReaderViewer } from './renderers/BookReaderViewer';
+import { TextOcrReader } from './renderers/TextOcrReader';
+import { FallbackSourceReader } from './renderers/FallbackSourceReader';
+import { PdfThumbnailSidebar } from './PdfThumbnailSidebar';
 
 type ReaderTheme = 'dark' | 'slate' | 'sepia' | 'light';
+type ViewMode = 'single' | 'spread';
 
 export const ArchiveInAppReader: React.FC = () => {
   const {
@@ -42,93 +51,50 @@ export const ArchiveInAppReader: React.FC = () => {
     saveArchiveReadingProgress,
     archiveLibrary,
     addArchiveToLibrary,
-    removeArchiveFromLibrary
+    removeArchiveFromLibrary,
   } = useData();
 
-  // Item metadata
-  const [metadata, setMetadata] = useState<ArchiveItemMetadata | null>(null);
-  const [loadingMetadata, setLoadingMetadata] = useState<boolean>(true);
+  // Representation & Detection State (Purely Internal)
+  const [repResult, setRepResult] = useState<BookRepresentationResult | null>(null);
+  const [isDetecting, setIsDetecting] = useState<boolean>(true);
+  
+  // Active renderer: 'pdf' | 'image_stack' | 'bookreader' | 'text' | 'fallback' (Determined automatically per-book)
+  const [activeRenderer, setActiveRenderer] = useState<BookRepresentationType>('pdf');
 
-  // Pagination & Progress
+  // Pagination & Document Info
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [totalPages, setTotalPages] = useState<number>(240);
+  const [outline, setOutline] = useState<any[]>([]);
   const [sessionMinutes, setSessionMinutes] = useState<number>(0);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
-  // Eye-safe Dark Default Environment
+  // View Mode, Format & Thumbnails
+  const [viewMode, setViewMode] = useState<ViewMode>('single');
+  const [showThumbnails, setShowThumbnails] = useState<boolean>(false);
+
+  // In-Document Search
+  const [showSearchBar, setShowSearchBar] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchResults, setSearchResults] = useState<number[]>([]);
+  const [currentMatchIndex, setCurrentMatchIndex] = useState<number>(0);
+  const [isSearching, setIsSearching] = useState<boolean>(false);
+
+  // Environment & Theme
   const [readerTheme, setReaderTheme] = useState<ReaderTheme>('dark');
   const [invertPageScan, setInvertPageScan] = useState<boolean>(false);
   const [showThemePanel, setShowThemePanel] = useState<boolean>(false);
 
-  // Internal PDF Zoom State (Sensible limits: 50% to 400%)
+  // Zoom State (50% to 400%)
   const [pageZoom, setPageZoom] = useState<number>(100);
   const [isDragging, setIsDragging] = useState<boolean>(false);
-  const [pageImageLoading, setPageImageLoading] = useState<boolean>(false);
 
-  // Audio Voice Reader (TTS) State
-  const [showAudioPanel, setShowAudioPanel] = useState<boolean>(false);
-  const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
-  const [isAudioLoading, setIsAudioLoading] = useState<boolean>(false);
-  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [selectedVoiceURI, setSelectedVoiceURI] = useState<string>(() => {
-    return localStorage.getItem('mindrise_reader_voice') || '';
-  });
-  const [audioPitch, setAudioPitch] = useState<number>(() => {
-    const p = parseFloat(localStorage.getItem('mindrise_reader_pitch') || '1.0');
-    return isNaN(p) ? 1.0 : p;
-  });
-  const [audioRate, setAudioRate] = useState<number>(() => {
-    const r = parseFloat(localStorage.getItem('mindrise_reader_rate') || '1.0');
-    return isNaN(r) ? 1.0 : r;
-  });
-  const [autoReadNextPage, setAutoReadNextPage] = useState<boolean>(true);
-  const [currentPageText, setCurrentPageText] = useState<string>('');
-  const [hasTextForPage, setHasTextForPage] = useState<boolean | null>(null);
-  const [audioError, setAudioError] = useState<string | null>(null);
-
-  // Audio Refs
-  const audioPanelRef = useRef<HTMLDivElement>(null);
-  const currentSpeechSessionRef = useRef<number>(0);
-  const isPlayingAudioRef = useRef<boolean>(false);
-  isPlayingAudioRef.current = isPlayingAudio;
-  const currentPageRef = useRef<number>(currentPage);
-  currentPageRef.current = currentPage;
-
-  // Populate system Speech Synthesis voices
-  useEffect(() => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-
-    const populateVoices = () => {
-      const list = window.speechSynthesis.getVoices();
-      if (list && list.length > 0) {
-        setAvailableVoices(list);
-        if (!selectedVoiceURI) {
-          const isHindiBook =
-            metadata?.language?.includes('hin') ||
-            activeArchiveReader?.title?.match(/[\u0900-\u097F]/);
-          const defaultVoice = isHindiBook
-            ? list.find((v) => v.lang.startsWith('hi')) ||
-              list.find((v) => v.lang.includes('IN')) ||
-              list[0]
-            : list.find((v) => v.lang.startsWith('en')) || list[0];
-          if (defaultVoice) {
-            setSelectedVoiceURI(defaultVoice.voiceURI);
-          }
-        }
-      }
-    };
-
-    populateVoices();
-    window.speechSynthesis.onvoiceschanged = populateVoices;
-    return () => {
-      window.speechSynthesis.onvoiceschanged = null;
-    };
-  }, [metadata?.language, activeArchiveReader?.title, selectedVoiceURI]);
-
-  // DOM Refs
+  // Refs
+  const viewerRef = useRef<PdfViewerHandle>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
-  const pageWrapperRef = useRef<HTMLDivElement>(null);
   const themePanelRef = useRef<HTMLDivElement>(null);
+  const touchDistRef = useRef<number | null>(null);
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
   const dragStartRef = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number }>({
     x: 0,
     y: 0,
@@ -136,309 +102,102 @@ export const ArchiveInAppReader: React.FC = () => {
     scrollTop: 0,
   });
   const isDraggingRef = useRef<boolean>(false);
-  const touchDistRef = useRef<number | null>(null);
-  const sessionTimerRef = useRef<any>(null);
 
-  // Restore saved progress on mount
+  // Close menus on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (themePanelRef.current && !themePanelRef.current.contains(e.target as Node)) {
+        setShowThemePanel(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // 1. Restore saved progress on mount for specific book
   useEffect(() => {
     if (!activeArchiveReader) return;
     const saved = archiveProgress[activeArchiveReader.identifier];
     if (saved && saved.currentPage) {
       setCurrentPage(saved.currentPage);
-    }
-  }, [activeArchiveReader, archiveProgress]);
-
-  // Session timer
-  useEffect(() => {
-    sessionTimerRef.current = setInterval(() => {
-      setSessionMinutes((m) => m + 1);
-    }, 60000);
-    return () => {
-      if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
-    };
-  }, []);
-
-  // Fetch metadata on mount
-  useEffect(() => {
-    if (!activeArchiveReader) return;
-
-    let isSubscribed = true;
-    setLoadingMetadata(true);
-
-    getArchiveItemMetadata(activeArchiveReader.identifier)
-      .then((data) => {
-        if (!isSubscribed) return;
-        setMetadata(data);
-        setLoadingMetadata(false);
-      })
-      .catch((err) => {
-        if (!isSubscribed) return;
-        console.warn('Archive metadata load notice:', err);
-        setLoadingMetadata(false);
-      });
-
-    return () => {
-      isSubscribed = false;
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-    };
-  }, [activeArchiveReader]);
-
-  // Total pages from metadata
-  const totalPages = metadata?.imagecount || 100;
-
-  // Bound current page
-  useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages);
-    } else if (currentPage < 1) {
+    } else {
       setCurrentPage(1);
     }
-  }, [totalPages, currentPage]);
+    setOutline([]);
+  }, [activeArchiveReader?.identifier]);
 
-  // Synchronized Zoom Handlers
-  const handleZoomIn = useCallback(() => {
-    setPageZoom((prev) => Math.min(400, Math.round((prev + 20) / 5) * 5));
-  }, []);
-
-  const handleZoomOut = useCallback(() => {
-    setPageZoom((prev) => Math.max(50, Math.round((prev - 20) / 5) * 5));
-  }, []);
-
-  const handleResetZoom = useCallback(() => {
-    setPageZoom(100);
-    if (viewportRef.current) {
-      viewportRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  }, []);
-
-  const handleFitWidth = useCallback(() => {
-    if (viewportRef.current) {
-      const clientW = viewportRef.current.clientWidth;
-      const targetW = Math.max(380, clientW - 48);
-      const computedZoom = Math.min(400, Math.max(50, Math.round((targetW / 850) * 100)));
-      setPageZoom(computedZoom);
-    }
-  }, []);
-
-  const handleFitPage = useCallback(() => {
-    if (viewportRef.current) {
-      const clientH = viewportRef.current.clientHeight;
-      // Standard page height ~1100px for 850px width
-      const targetH = Math.max(400, clientH - 120);
-      const computedZoom = Math.min(400, Math.max(50, Math.round((targetH / 1100) * 100)));
-      setPageZoom(computedZoom);
-    }
-  }, []);
-
-  // LAPTOP TOUCHPAD PINCH-TO-ZOOM + FOCAL POINT ANCHORING
-  // Two-finger pinch triggers wheel event with e.ctrlKey === true on Windows precision touchpads & Mac trackpads
+  // 2. Session timer
   useEffect(() => {
-    const container = viewportRef.current;
-    if (!container) return;
+    const timer = setInterval(() => {
+      setSessionMinutes((m) => m + 1);
+    }, 60000);
+    return () => clearInterval(timer);
+  }, []);
 
-    const onWheel = (e: WheelEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        // STRICT REQUIREMENT: Intercept and prevent the browser window from zooming
-        e.preventDefault();
+  // 3. CORE AUTOMATIC ASSET DETECTION ENGINE (Per-Book)
+  const runAssetDetection = useCallback(async () => {
+    if (!activeArchiveReader) return;
 
-        const rect = container.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
+    setIsDetecting(true);
 
-        const currentScrollLeft = container.scrollLeft;
-        const currentScrollTop = container.scrollTop;
+    try {
+      const result = await detectBookRepresentation(activeArchiveReader);
+      
+      setRepResult(result);
+      setTotalPages(Math.max(1, result.pageCount || 240));
 
-        // On Precision Touchpads:
-        // Two-finger pinch out = negative deltaY = zoom in
-        // Two-finger pinch in = positive deltaY = zoom out
-        const zoomDelta = -e.deltaY;
-        const zoomMultiplier = Math.exp(zoomDelta * 0.005);
+      // Auto-select the detected renderer internally
+      const chosenRenderer = result.selectedRepresentation.renderer;
+      setActiveRenderer(chosenRenderer);
+      
+      setIsDetecting(false);
+    } catch (err) {
+      console.warn('Asset detection notice, using fallback direct reader:', err);
+      setActiveRenderer('image_stack');
+      setIsDetecting(false);
+    }
+  }, [activeArchiveReader]);
 
-        setPageZoom((prevZoom) => {
-          let targetZoom = prevZoom * zoomMultiplier;
-          // Clamp between sensible limits (50% to 400%)
-          targetZoom = Math.min(400, Math.max(50, Math.round(targetZoom * 10) / 10));
+  useEffect(() => {
+    runAssetDetection();
+  }, [runAssetDetection]);
 
-          if (Math.abs(targetZoom - prevZoom) < 0.05) {
-            return prevZoom;
-          }
+  // 4. SILENT AUTOMATIC FAILOVER HANDLER
+  // If a renderer (e.g. PDF) fails to load, automatically failover to ImageStack / BookReader (NEVER plain text)
+  const handleRendererFailover = useCallback((failedType: BookRepresentationType) => {
+    if (!repResult) {
+      setActiveRenderer('image_stack');
+      return;
+    }
 
-          const ratio = targetZoom / prevZoom;
-
-          // Focal Point Anchoring:
-          // Keep the point under the cursor stable during pinch
-          const newScrollLeft = (currentScrollLeft + mouseX) * ratio - mouseX;
-          const newScrollTop = (currentScrollTop + mouseY) * ratio - mouseY;
-
-          requestAnimationFrame(() => {
-            if (container) {
-              container.scrollLeft = newScrollLeft;
-              container.scrollTop = newScrollTop;
-            }
-          });
-
-          return targetZoom;
-        });
+    const next = getNextFallbackRepresentation(repResult, failedType);
+    console.info(`Automatic reader failover: ${failedType} -> switching to ${next.renderer}`);
+    
+    // Never degrade to plain text when visual representation is available
+    if (next.renderer === 'text') {
+      if (repResult.representations.imageStack.available) {
+        setActiveRenderer('image_stack');
+      } else if (repResult.representations.bookReader.available) {
+        setActiveRenderer('bookreader');
       } else {
-        // NORMAL TWO-FINGER SCROLL:
-        // e.ctrlKey is false.
-        // Let the browser handle standard vertical & horizontal scrolling smoothly.
-        // DO NOT preventDefault! DO NOT change zoom!
+        setActiveRenderer('image_stack');
       }
-    };
+    } else {
+      setActiveRenderer(next.renderer);
+    }
+  }, [repResult]);
 
-    container.addEventListener('wheel', onWheel, { passive: false });
-    return () => {
-      container.removeEventListener('wheel', onWheel);
-    };
+  // 5. Handle Document Loaded Callback (e.g. from PDF.js)
+  const handleDocumentLoaded = useCallback((docTotalPages: number, docOutline?: any[]) => {
+    if (docTotalPages && docTotalPages > 0) {
+      setTotalPages(docTotalPages);
+    }
+    if (docOutline) {
+      setOutline(docOutline);
+    }
   }, []);
 
-  // Window-level guard: never allow browser page zoom while reader is mounted
-  useEffect(() => {
-    const blockBrowserZoom = (e: WheelEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-      }
-    };
-
-    const blockGesture = (e: any) => {
-      e.preventDefault();
-    };
-
-    window.addEventListener('wheel', blockBrowserZoom, { passive: false });
-    window.addEventListener('gesturestart', blockGesture, { passive: false });
-    window.addEventListener('gesturechange', blockGesture, { passive: false });
-
-    return () => {
-      window.removeEventListener('wheel', blockBrowserZoom);
-      window.removeEventListener('gesturestart', blockGesture);
-      window.removeEventListener('gesturechange', blockGesture);
-    };
-  }, []);
-
-  // Keyboard Zoom Shortcuts (Ctrl +, Ctrl -, Ctrl 0)
-  useEffect(() => {
-    const handleZoomKeys = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        if (e.key === '+' || e.key === '=' || e.key === 'Add') {
-          e.preventDefault();
-          handleZoomIn();
-        } else if (e.key === '-' || e.key === '_' || e.key === 'Subtract') {
-          e.preventDefault();
-          handleZoomOut();
-        } else if (e.key === '0') {
-          e.preventDefault();
-          handleResetZoom();
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleZoomKeys);
-    return () => window.removeEventListener('keydown', handleZoomKeys);
-  }, [handleZoomIn, handleZoomOut, handleResetZoom]);
-
-  // Touchscreen multi-touch 2-finger pinch zoom
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 2) {
-      const dist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      touchDistRef.current = dist;
-    }
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (e.touches.length === 2 && touchDistRef.current !== null) {
-      const dist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      const ratio = dist / touchDistRef.current;
-      touchDistRef.current = dist;
-
-      setPageZoom((prev) => {
-        const next = Math.min(400, Math.max(50, Math.round(prev * ratio * 10) / 10));
-        return next;
-      });
-    }
-  };
-
-  const handleTouchEnd = () => {
-    touchDistRef.current = null;
-  };
-
-  // Optional Active Click-Drag Panning (ACTIVE ONLY DURING MOUSE DOWN)
-  const handleMouseDown = (e: React.MouseEvent) => {
-    // Ignore clicks on buttons, inputs, links
-    if ((e.target as HTMLElement).closest('button, input, a, select')) return;
-
-    const container = viewportRef.current;
-    if (!container) return;
-
-    // Allow dragging when document exceeds viewport bounds
-    const isScrollable =
-      container.scrollWidth > container.clientWidth ||
-      container.scrollHeight > container.clientHeight;
-
-    if (!isScrollable && pageZoom <= 100) return;
-
-    isDraggingRef.current = true;
-    setIsDragging(true);
-    dragStartRef.current = {
-      x: e.clientX,
-      y: e.clientY,
-      scrollLeft: container.scrollLeft,
-      scrollTop: container.scrollTop,
-    };
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDraggingRef.current) return;
-    const container = viewportRef.current;
-    if (!container) return;
-
-    const dx = e.clientX - dragStartRef.current.x;
-    const dy = e.clientY - dragStartRef.current.y;
-
-    container.scrollLeft = dragStartRef.current.scrollLeft - dx;
-    container.scrollTop = dragStartRef.current.scrollTop - dy;
-  };
-
-  const handleMouseUp = () => {
-    if (isDraggingRef.current) {
-      isDraggingRef.current = false;
-      setIsDragging(false);
-    }
-  };
-
-  // Close theme panel and audio panel on click outside or Escape
-  useEffect(() => {
-    const handleDown = (e: MouseEvent) => {
-      if (themePanelRef.current && !themePanelRef.current.contains(e.target as Node)) {
-        setShowThemePanel(false);
-      }
-      if (audioPanelRef.current && !audioPanelRef.current.contains(e.target as Node)) {
-        setShowAudioPanel(false);
-      }
-    };
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setShowThemePanel(false);
-        setShowAudioPanel(false);
-      }
-    };
-    document.addEventListener('mousedown', handleDown);
-    document.addEventListener('keydown', handleKey);
-    return () => {
-      document.removeEventListener('mousedown', handleDown);
-      document.removeEventListener('keydown', handleKey);
-    };
-  }, []);
-
-  // Save progress
+  // 6. Save reading progress
   const handleSaveProgress = useCallback(
     (page: number) => {
       if (!activeArchiveReader) return;
@@ -456,57 +215,310 @@ export const ArchiveInAppReader: React.FC = () => {
     [activeArchiveReader, totalPages, sessionMinutes, archiveProgress, saveArchiveReadingProgress]
   );
 
+  // 7. Navigation controls
   const goToNextPage = useCallback(() => {
+    const step = viewMode === 'spread' ? 2 : 1;
     if (currentPage < totalPages) {
-      const next = currentPage + 1;
+      const next = Math.min(totalPages, currentPage + step);
       setCurrentPage(next);
       handleSaveProgress(next);
       if (viewportRef.current) {
         viewportRef.current.scrollTo({ top: 0, behavior: 'instant' });
       }
     }
-  }, [currentPage, totalPages, handleSaveProgress]);
+  }, [currentPage, totalPages, viewMode, handleSaveProgress]);
 
   const goToPrevPage = useCallback(() => {
+    const step = viewMode === 'spread' ? 2 : 1;
     if (currentPage > 1) {
-      const prev = currentPage - 1;
+      const prev = Math.max(1, currentPage - step);
       setCurrentPage(prev);
       handleSaveProgress(prev);
       if (viewportRef.current) {
         viewportRef.current.scrollTo({ top: 0, behavior: 'instant' });
       }
     }
-  }, [currentPage, handleSaveProgress]);
+  }, [currentPage, viewMode, handleSaveProgress]);
 
-  // Keyboard Navigation: Arrow Left/Right
-  useEffect(() => {
-    const handleNavKey = (e: KeyboardEvent) => {
-      if (showThemePanel) return;
-      if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
-        e.preventDefault();
-        goToNextPage();
-      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
-        e.preventDefault();
-        goToPrevPage();
+  // 8. Dynamic & Coordinate-Aware Zoom Handlers (Center-point preserved)
+  const updateZoomAtPoint = useCallback(
+    (newZoomVal: number, clientX?: number, clientY?: number) => {
+      const container = viewportRef.current;
+      const clampedNewZoom = Math.min(400, Math.max(50, newZoomVal));
+
+      if (!container) {
+        setPageZoom(clampedNewZoom);
+        return;
       }
-    };
-    window.addEventListener('keydown', handleNavKey);
-    return () => window.removeEventListener('keydown', handleNavKey);
-  }, [goToNextPage, goToPrevPage, showThemePanel]);
 
-  // Fullscreen
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      containerRef.current?.requestFullscreen().catch(console.warn);
-      setIsFullscreen(true);
-    } else {
-      document.exitFullscreen().catch(console.warn);
-      setIsFullscreen(false);
+      const currentZoom = pageZoom;
+      if (clampedNewZoom === currentZoom) return;
+
+      const ratio = clampedNewZoom / currentZoom;
+      const rect = container.getBoundingClientRect();
+
+      // Determine focal point relative to viewport
+      const focalX = clientX !== undefined ? clientX - rect.left : container.clientWidth / 2;
+      const focalY = clientY !== undefined ? clientY - rect.top : container.clientHeight / 2;
+
+      const oldScale = currentZoom / 100;
+      const newScale = clampedNewZoom / 100;
+
+      const currentScrollLeft = container.scrollLeft;
+      const currentScrollTop = container.scrollTop;
+
+      // Document coordinate under pointer
+      const docX = (currentScrollLeft + focalX) / oldScale;
+      const docY = (currentScrollTop + focalY) / oldScale;
+
+      const targetScrollLeft = docX * newScale - focalX;
+      const targetScrollTop = docY * newScale - focalY;
+
+      // Force React to synchronously update DOM styles/dimensions for the new scale
+      flushSync(() => {
+        setPageZoom(clampedNewZoom);
+      });
+
+      // Now scroll positions can be applied instantly and won't hit old clamping limits
+      if (viewportRef.current) {
+        viewportRef.current.scrollLeft = Math.max(0, targetScrollLeft);
+        viewportRef.current.scrollTop = Math.max(0, targetScrollTop);
+      }
+    },
+    [pageZoom]
+  );
+
+  const handleZoomIn = useCallback(
+    (clientX?: number, clientY?: number) => {
+      updateZoomAtPoint(pageZoom + 25, clientX, clientY);
+    },
+    [pageZoom, updateZoomAtPoint]
+  );
+
+  const handleZoomOut = useCallback(
+    (clientX?: number, clientY?: number) => {
+      updateZoomAtPoint(pageZoom - 25, clientX, clientY);
+    },
+    [pageZoom, updateZoomAtPoint]
+  );
+
+  const handleResetZoom = useCallback(() => {
+    setPageZoom(100);
+    if (viewportRef.current) {
+      viewportRef.current.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+    }
+  }, []);
+
+  const handleFitWidth = useCallback(() => {
+    if (viewportRef.current) {
+      const clientW = viewportRef.current.clientWidth;
+      const targetW = Math.max(380, clientW - 64);
+      const computedZoom = Math.min(400, Math.max(50, (targetW / 760) * 100));
+      setPageZoom(computedZoom);
+    }
+  }, []);
+
+  const handleFitPage = useCallback(() => {
+    if (viewportRef.current) {
+      const clientH = viewportRef.current.clientHeight;
+      const targetH = Math.max(400, clientH - 120);
+      const computedZoom = Math.min(400, Math.max(50, (targetH / 1050) * 100));
+      setPageZoom(computedZoom);
+    }
+  }, []);
+
+  // 9. Wheel & Touchpad Gestures (Natural Native Scroll & Ctrl/Pinch Zoom)
+  const handleWheel = (e: React.WheelEvent) => {
+    // Ctrl/Meta pinch zoom on trackpad or mouse wheel
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const zoomStep = -e.deltaY * 0.2; // Continuous smooth scaling step
+      updateZoomAtPoint(pageZoom + zoomStep, e.clientX, e.clientY);
+      return;
+    }
+    // All regular wheel events scroll the container naturally without page jumping or scroll snapping
+  };
+
+  // 10. Mouse Drag Panning in any direction when zoomed
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button, input, a, select, iframe')) return;
+    if (!viewportRef.current) return;
+
+    // Allow grab panning if document is scrollable in any direction
+    const container = viewportRef.current;
+    const isScrollable = container.scrollWidth > container.clientWidth || container.scrollHeight > container.clientHeight;
+    if (!isScrollable && pageZoom <= 100) return;
+
+    isDraggingRef.current = true;
+    setIsDragging(true);
+    dragStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      scrollLeft: container.scrollLeft,
+      scrollTop: container.scrollTop,
+    };
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDraggingRef.current || !viewportRef.current) return;
+    e.preventDefault();
+    const dx = e.clientX - dragStartRef.current.x;
+    const dy = e.clientY - dragStartRef.current.y;
+    viewportRef.current.scrollLeft = dragStartRef.current.scrollLeft - dx;
+    viewportRef.current.scrollTop = dragStartRef.current.scrollTop - dy;
+  };
+
+  const handleMouseUp = () => {
+    isDraggingRef.current = false;
+    setIsDragging(false);
+  };
+
+  // 11. Mobile Touch Swipe & Pinch
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      touchStartPosRef.current = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+      };
+    } else if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      touchDistRef.current = Math.hypot(dx, dy);
     }
   };
 
-  // Library bookmark toggle
-  const isSavedInLibrary = Boolean(activeArchiveReader && archiveLibrary[activeArchiveReader.identifier]);
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && touchDistRef.current !== null) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const newDist = Math.hypot(dx, dy);
+      const factor = newDist / touchDistRef.current;
+
+      if (factor > 1.08) {
+        handleZoomIn();
+        touchDistRef.current = newDist;
+      } else if (factor < 0.92) {
+        handleZoomOut();
+        touchDistRef.current = newDist;
+      }
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartPosRef.current && e.changedTouches.length === 1 && pageZoom <= 110) {
+      const endX = e.changedTouches[0].clientX;
+      const endY = e.changedTouches[0].clientY;
+      const dx = endX - touchStartPosRef.current.x;
+      const dy = endY - touchStartPosRef.current.y;
+
+      // Horizontal swipe > 60px with small vertical deviation
+      if (Math.abs(dx) > 60 && Math.abs(dy) < 50) {
+        if (dx < 0) {
+          goToNextPage();
+        } else {
+          goToPrevPage();
+        }
+      }
+    }
+    touchStartPosRef.current = null;
+    touchDistRef.current = null;
+  };
+
+  // Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeys = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === '+' || e.key === '=' || e.key === 'Add') {
+          e.preventDefault();
+          handleZoomIn();
+        } else if (e.key === '-' || e.key === '_' || e.key === 'Subtract') {
+          e.preventDefault();
+          handleZoomOut();
+        } else if (e.key === '0') {
+          e.preventDefault();
+          handleResetZoom();
+        } else if (e.key === 'f' || e.key === 'F') {
+          e.preventDefault();
+          setShowSearchBar((v) => !v);
+        }
+      } else {
+        if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+          e.preventDefault();
+          goToNextPage();
+        } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+          e.preventDefault();
+          goToPrevPage();
+        } else if (e.key === 'Home') {
+          e.preventDefault();
+          setCurrentPage(1);
+          handleSaveProgress(1);
+        } else if (e.key === 'End') {
+          e.preventDefault();
+          setCurrentPage(totalPages);
+          handleSaveProgress(totalPages);
+        } else if (e.key === 'f' || e.key === 'F') {
+          if (!e.repeat) {
+            toggleFullscreen();
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeys);
+    return () => window.removeEventListener('keydown', handleKeys);
+  }, [goToNextPage, goToPrevPage, handleZoomIn, handleZoomOut, handleResetZoom, handleSaveProgress, totalPages]);
+
+  // In-Document Search Execution
+  const handlePerformSearch = async (query: string) => {
+    if (!query.trim() || !viewerRef.current) return;
+    setIsSearching(true);
+    try {
+      const matches = await viewerRef.current.searchInDocument(query);
+      setSearchResults(matches);
+      setCurrentMatchIndex(0);
+      if (matches.length > 0) {
+        setCurrentPage(matches[0]);
+        handleSaveProgress(matches[0]);
+      }
+    } catch {
+      // Ignored
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const goToNextMatch = () => {
+    if (searchResults.length === 0) return;
+    const nextIdx = (currentMatchIndex + 1) % searchResults.length;
+    setCurrentMatchIndex(nextIdx);
+    setCurrentPage(searchResults[nextIdx]);
+    handleSaveProgress(searchResults[nextIdx]);
+  };
+
+  const goToPrevMatch = () => {
+    if (searchResults.length === 0) return;
+    const prevIdx = (currentMatchIndex - 1 + searchResults.length) % searchResults.length;
+    setCurrentMatchIndex(prevIdx);
+    setCurrentPage(searchResults[prevIdx]);
+    handleSaveProgress(searchResults[prevIdx]);
+  };
+
+  // Fullscreen Toggle
+  const toggleFullscreen = () => {
+    if (!containerRef.current) return;
+    if (!document.fullscreenElement) {
+      containerRef.current.requestFullscreen?.().then(() => setIsFullscreen(true)).catch(() => {});
+    } else {
+      document.exitFullscreen?.().then(() => setIsFullscreen(false)).catch(() => {});
+    }
+  };
+
+  // Library Toggle
+  const isSavedInLibrary = activeArchiveReader
+    ? !!archiveLibrary[activeArchiveReader.identifier]
+    : false;
 
   const toggleLibrary = () => {
     if (!activeArchiveReader) return;
@@ -516,395 +528,220 @@ export const ArchiveInAppReader: React.FC = () => {
       addArchiveToLibrary({
         identifier: activeArchiveReader.identifier,
         title: activeArchiveReader.title,
-        creator: activeArchiveReader.creator,
+        author: activeArchiveReader.creator,
         coverUrl: activeArchiveReader.coverUrl,
-        language: metadata?.language || 'und',
-        shelf: 'currently-reading',
         addedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        currentPage,
+        totalPages,
+        shelf: 'currently-reading',
       });
     }
   };
 
-  // Stop audio and cancel speech synthesis
-  const stopAudio = useCallback(() => {
-    currentSpeechSessionRef.current += 1;
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
-    setIsPlayingAudio(false);
-    setIsAudioLoading(false);
-  }, []);
-
-  // Speak running page text fetched from Internet Archive OCR
-  const speakRunningPage = useCallback(
-    async (pageNum: number) => {
-      if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-      if (!activeArchiveReader) return;
-
-      currentSpeechSessionRef.current += 1;
-      const sessionId = currentSpeechSessionRef.current;
-      window.speechSynthesis.cancel();
-
-      setIsPlayingAudio(true);
-      setIsAudioLoading(true);
-      setAudioError(null);
-
-      try {
-        const res = await fetch(
-          `/api/archive/page-text?identifier=${encodeURIComponent(
-            activeArchiveReader.identifier
-          )}&page=${pageNum}`
-        );
-        if (!res.ok) throw new Error('Page text retrieval failed');
-        const data = await res.json();
-
-        if (sessionId !== currentSpeechSessionRef.current) return;
-        setIsAudioLoading(false);
-
-        const rawText: string = data.text || '';
-        setCurrentPageText(rawText);
-        setHasTextForPage(Boolean(data.hasText));
-
-        let textToRead = rawText.trim();
-        if (!textToRead || textToRead.length < 5) {
-          textToRead = `पृष्ठ ${pageNum}। इस पृष्ठ पर कोई मुद्रित पाठ नहीं मिला, यह चित्र या आवरण हो सकता है।`;
-        }
-
-        // Split text into natural sentence chunks (~100-180 chars) to prevent browser TTS timeout
-        const chunks = textToRead
-          .replace(/[\r\n]+/g, ' ')
-          .split(/(?<=[।!?.\n])\s+/)
-          .filter((c) => c.trim().length > 0);
-
-        if (chunks.length === 0) chunks.push(textToRead);
-
-        let chunkIndex = 0;
-
-        const speakNextChunk = () => {
-          if (sessionId !== currentSpeechSessionRef.current) return;
-          if (chunkIndex >= chunks.length) {
-            // Finished reading page
-            if (autoReadNextPage && pageNum < totalPages) {
-              setCurrentPage((p) => {
-                const next = p + 1;
-                handleSaveProgress(next);
-                if (viewportRef.current) {
-                  viewportRef.current.scrollTo({ top: 0, behavior: 'instant' });
-                }
-                setTimeout(() => {
-                  speakRunningPage(next);
-                }, 400);
-                return next;
-              });
-            } else {
-              setIsPlayingAudio(false);
-            }
-            return;
-          }
-
-          const chunkText = chunks[chunkIndex++];
-          const utterance = new SpeechSynthesisUtterance(chunkText);
-
-          // Apply selected voice
-          if (selectedVoiceURI && availableVoices.length > 0) {
-            const matchedVoice = availableVoices.find((v) => v.voiceURI === selectedVoiceURI);
-            if (matchedVoice) {
-              utterance.voice = matchedVoice;
-              utterance.lang = matchedVoice.lang;
-            }
-          } else {
-            const isHindi =
-              metadata?.language?.includes('hin') ||
-              activeArchiveReader.title?.match(/[\u0900-\u097F]/) ||
-              chunkText.match(/[\u0900-\u097F]/);
-            utterance.lang = isHindi ? 'hi-IN' : 'en-US';
-          }
-
-          utterance.pitch = audioPitch;
-          utterance.rate = audioRate;
-
-          utterance.onend = () => {
-            if (sessionId === currentSpeechSessionRef.current) {
-              speakNextChunk();
-            }
-          };
-
-          utterance.onerror = (e) => {
-            console.warn('TTS chunk notice:', e);
-            if (sessionId === currentSpeechSessionRef.current) {
-              speakNextChunk();
-            }
-          };
-
-          window.speechSynthesis.speak(utterance);
-        };
-
-        speakNextChunk();
-      } catch (err: any) {
-        if (sessionId === currentSpeechSessionRef.current) {
-          setIsAudioLoading(false);
-          setIsPlayingAudio(false);
-          setAudioError('पाठ लोड करने में असमर्थ।');
-        }
-      }
-    },
-    [
-      activeArchiveReader,
-      autoReadNextPage,
-      totalPages,
-      handleSaveProgress,
-      selectedVoiceURI,
-      availableVoices,
-      metadata?.language,
-      audioPitch,
-      audioRate,
-    ]
-  );
-
-  // Master 1-button toggle for audio
-  const toggleSpeechMaster = () => {
-    if (isPlayingAudio) {
-      stopAudio();
-    } else {
-      speakRunningPage(currentPage);
-    }
-  };
-
-  // When page flips and audio is actively playing, speak the new running page
-  useEffect(() => {
-    if (isPlayingAudioRef.current) {
-      speakRunningPage(currentPage);
-    }
-  }, [currentPage, speakRunningPage]);
-
-  if (!activeArchiveReader) return null;
-
-  // Theme Styles: Dark (Default Eye-Comfort), Slate, Sepia, Light
+  // Theme Styles Dictionary
   const themeStyles = {
     dark: {
-      bg: 'bg-[#0B0D10]',
-      text: 'text-stone-100',
-      headerBg: 'bg-[#12151A] border-white/10',
-      footerBg: 'bg-[#12151A] border-white/10',
-      controlBtn: 'bg-white/10 hover:bg-white/15 text-stone-200 border-white/10',
-      activeBtn: 'bg-amber-500 text-stone-950 font-bold',
-      canvasBg: 'bg-[#08090C]',
-      pageShadow: 'shadow-2xl ring-1 ring-white/10',
+      headerBg: 'bg-stone-950/95 border-stone-800 text-stone-100',
+      canvasBg: 'bg-[#121214]',
+      footerBg: 'bg-stone-950/95 border-stone-800 text-stone-300',
+      controlBtn: 'bg-stone-900 border-stone-700 text-stone-200 hover:bg-stone-800 hover:text-white',
+      accentBadge: 'bg-stone-800 text-amber-400 border-stone-700',
     },
     slate: {
-      bg: 'bg-[#1E2229]',
-      text: 'text-stone-100',
-      headerBg: 'bg-[#181B20] border-stone-700',
-      footerBg: 'bg-[#181B20] border-stone-700',
-      controlBtn: 'bg-white/10 hover:bg-white/15 text-stone-200 border-white/10',
-      activeBtn: 'bg-amber-500 text-stone-950 font-bold',
-      canvasBg: 'bg-[#15181D]',
-      pageShadow: 'shadow-xl ring-1 ring-white/10',
+      headerBg: 'bg-slate-950/95 border-slate-800 text-slate-100',
+      canvasBg: 'bg-[#0f172a]',
+      footerBg: 'bg-slate-950/95 border-slate-800 text-slate-300',
+      controlBtn: 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800 hover:text-white',
+      accentBadge: 'bg-slate-800 text-cyan-400 border-slate-700',
     },
     sepia: {
-      bg: 'bg-[#F4ECD8]',
-      text: 'text-[#2C2416]',
-      headerBg: 'bg-[#E8DEC5] border-[#D9CDAD]',
-      footerBg: 'bg-[#E8DEC5] border-[#D9CDAD]',
-      controlBtn: 'bg-[#2C2416]/10 hover:bg-[#2C2416]/15 text-[#2C2416] border-[#2C2416]/15',
-      activeBtn: 'bg-[#8B5A2B] text-white font-bold',
-      canvasBg: 'bg-[#EFE4CC]',
-      pageShadow: 'shadow-md ring-1 ring-[#D9CDAD]',
+      headerBg: 'bg-[#EDE4D0] border-[#D9CBB0] text-[#3D2C1E]',
+      canvasBg: 'bg-[#F4ECD8]',
+      footerBg: 'bg-[#EDE4D0] border-[#D9CBB0] text-[#4A3728]',
+      controlBtn: 'bg-[#E5DAC0] border-[#D4C4A5] text-[#3D2C1E] hover:bg-[#DDD0B5]',
+      accentBadge: 'bg-[#D9CBB0] text-[#5A381E] border-[#C8B698]',
     },
     light: {
-      bg: 'bg-[#FAF8F5]',
-      text: 'text-[#1A1A1A]',
-      headerBg: 'bg-[#F0ECE1] border-[#E2DDD0]',
-      footerBg: 'bg-[#F0ECE1] border-[#E2DDD0]',
-      controlBtn: 'bg-black/5 hover:bg-black/10 text-stone-800 border-black/10',
-      activeBtn: 'bg-amber-600 text-white font-bold',
-      canvasBg: 'bg-[#F4F0E6]',
-      pageShadow: 'shadow-md ring-1 ring-black/10',
+      headerBg: 'bg-white/95 border-stone-200 text-stone-800',
+      canvasBg: 'bg-[#F5F5F7]',
+      footerBg: 'bg-white/95 border-stone-200 text-stone-600',
+      controlBtn: 'bg-stone-100 border-stone-300 text-stone-700 hover:bg-stone-200 hover:text-stone-950',
+      accentBadge: 'bg-stone-100 text-amber-600 border-stone-200',
     },
   };
 
   const currentTheme = themeStyles[readerTheme];
 
-  // Dynamic high-resolution width for sharp reading facsimile
-  const targetWidth = pageZoom >= 180 ? '1600' : pageZoom >= 120 ? '1200' : '800';
+  if (!activeArchiveReader) {
+    return null;
+  }
 
-  // URL for scanned page facsimile image via proxy (falls back to IA leaf)
-  const pageImageUrl = `/api/archive/page-image?identifier=${encodeURIComponent(
-    activeArchiveReader.identifier
-  )}&page=${currentPage}&width=${targetWidth}`;
-
-  const readingPercentage = totalPages > 0 ? Math.round((currentPage / totalPages) * 100) : 0;
+  const readingPercentage = totalPages > 0 ? Math.min(100, Math.round((currentPage / totalPages) * 100)) : 0;
   const estimatedMinsLeft = Math.max(1, Math.round((totalPages - currentPage) * 1.5));
-
-  // Compute image filter for eye comfort / night reading inversion
-  const getFilterStyle = () => {
-    if (invertPageScan) {
-      return 'invert(90%) hue-rotate(180deg) contrast(110%) brightness(95%)';
-    }
-    if (readerTheme === 'sepia') {
-      return 'sepia(30%) contrast(102%) brightness(98%)';
-    }
-    return 'none';
-  };
 
   return (
     <div
       ref={containerRef}
-      className={`fixed inset-0 z-50 flex flex-col ${currentTheme.bg} ${currentTheme.text} font-sans select-none overflow-hidden transition-colors duration-200`}
+      className="fixed inset-0 z-50 flex flex-col bg-stone-950 select-none overflow-hidden"
     >
-      {/* 1. TOP HEADER */}
+      {/* 1. TOP HEADER & CONTROLS */}
       <header
         className={`flex h-14 items-center justify-between border-b ${currentTheme.headerBg} px-3 sm:px-6 shrink-0 z-30 transition-colors`}
       >
-        {/* Left: Back & Title */}
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0 max-w-sm sm:max-w-md">
+        {/* Left: Back + Book Details */}
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0 max-w-[55%] sm:max-w-[45%]">
           <button
-            onClick={() => {
-              if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-                window.speechSynthesis.cancel();
-              }
-              closeArchiveReader();
-            }}
-            className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-all shrink-0 cursor-pointer ${currentTheme.controlBtn}`}
-            title="Exit Reader (वापस जाएं)"
+            onClick={closeArchiveReader}
+            className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-all cursor-pointer ${currentTheme.controlBtn}`}
+            title="Back to Catalog / Library"
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
 
           <div className="min-w-0">
-            <h1 className="font-serif text-xs sm:text-sm font-bold truncate leading-tight">
+            <h1 className="text-xs sm:text-sm font-serif font-bold truncate leading-tight">
               {activeArchiveReader.title}
             </h1>
-            <div className="flex items-center gap-1.5 text-[10px] opacity-70">
-              <span className="truncate">{activeArchiveReader.creator || 'Classical Edition'}</span>
-              <span>•</span>
-              <span className="font-mono">{getLanguageName(metadata?.language || 'hin')}</span>
+            <div className="flex items-center gap-2 text-[10px] opacity-75">
+              <span className="truncate">{activeArchiveReader.creator || 'Classical Author'}</span>
             </div>
           </div>
         </div>
 
-        {/* Center: Clean Book Status Badge */}
-        <div className="hidden sm:flex items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-full border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 px-3 py-1 text-xs font-medium">
-            <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-            <span className="font-serif">Original Scanned Book</span>
-            <span className="opacity-40 font-mono text-[10px]">
-              (Page {currentPage} / {totalPages})
-            </span>
-          </div>
+        {/* Center: Format Switcher */}
+        <div className="hidden md:flex items-center p-1 rounded-full border border-black/10 dark:border-white/10 bg-[#1A1A1A] text-xs font-medium text-stone-300">
+          <button
+            onClick={() => setActiveRenderer('image_stack')}
+            disabled={!repResult?.representations?.imageStack?.available}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all ${
+              activeRenderer === 'image_stack' ? 'bg-amber-500 text-stone-950 font-medium shadow-sm' : 'hover:text-white'
+            } ${!repResult?.representations?.imageStack?.available ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+          >
+            <ImageIcon className="h-3.5 w-3.5" />
+            <span>HQ Scan</span>
+          </button>
+          
+          <button
+            onClick={() => setActiveRenderer(repResult?.representations?.text?.available ? 'text' : 'bookreader')}
+            disabled={!repResult?.representations?.text?.available && !repResult?.representations?.bookReader?.available}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all ${
+              activeRenderer === 'text' || activeRenderer === 'bookreader' ? 'bg-amber-500 text-stone-950 font-medium shadow-sm' : 'hover:text-white'
+            } ${(!repResult?.representations?.text?.available && !repResult?.representations?.bookReader?.available) ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+          >
+            <FileText className="h-3.5 w-3.5" />
+            <span>Clean Text</span>
+          </button>
+
+          <button
+            onClick={() => setActiveRenderer('pdf')}
+            disabled={!repResult?.representations?.pdf?.available}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all ${
+              activeRenderer === 'pdf' ? 'bg-amber-500 text-stone-950 font-medium shadow-sm' : 'hover:text-white'
+            } ${!repResult?.representations?.pdf?.available ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+          >
+            <BookOpen className="h-3.5 w-3.5" />
+            <span>Vector PDF</span>
+          </button>
         </div>
 
-        {/* Right: Sun Theme Icon, TTS Audio, Bookmark, Fullscreen */}
-        <div className="flex items-center gap-1.5 relative">
-          {/* Sun Icon -> Pure Dark/Light/Slate/Sepia Selection Panel */}
+        {/* Right Action Icons */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Thumbnails Drawer Toggle */}
+          <button
+            onClick={() => setShowThumbnails((v) => !v)}
+            className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-all cursor-pointer ${
+              showThumbnails ? 'bg-amber-500 text-stone-950 font-bold border-amber-400' : currentTheme.controlBtn
+            }`}
+            title="Page Thumbnails & Table of Contents"
+          >
+            <Layers className="h-4 w-4" />
+          </button>
+
+          {/* Search Toggle */}
+          {activeRenderer === 'pdf' && (
+            <button
+              onClick={() => setShowSearchBar((v) => !v)}
+              className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-all cursor-pointer ${
+                showSearchBar ? 'bg-amber-500 text-stone-950 font-bold border-amber-400' : currentTheme.controlBtn
+              }`}
+              title="Search Text in Book (Ctrl+F)"
+            >
+              <Search className="h-4 w-4" />
+            </button>
+          )}
+
+          {/* Theme Settings Popover */}
           <div className="relative" ref={themePanelRef}>
             <button
               onClick={() => setShowThemePanel((v) => !v)}
-              className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-all cursor-pointer ${
-                showThemePanel ? currentTheme.activeBtn : currentTheme.controlBtn
-              }`}
-              title="Theme & Lighting (डार्क, लाइट, सेपिया, स्लेट)"
+              className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-all cursor-pointer ${currentTheme.controlBtn}`}
+              title="Reading Theme & Canvas Display"
             >
-              <Sun className="h-4 w-4 text-amber-500" />
+              <Sliders className="h-4 w-4" />
             </button>
 
-            {/* Theme & Eye Comfort Panel */}
             {showThemePanel && (
-              <div
-                className={`absolute right-0 top-full mt-2 w-72 rounded-2xl border p-4 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150 ${currentTheme.headerBg} border-black/20 dark:border-white/15`}
-              >
-                <div className="flex items-center justify-between pb-2 mb-3 border-b border-black/10 dark:border-white/10 text-xs font-semibold">
-                  <span className="flex items-center gap-1.5">
-                    <Sun className="h-3.5 w-3.5 text-amber-500" />
-                    <span>Theme & Lighting</span>
+              <div className="absolute right-0 top-11 z-50 w-72 rounded-2xl border border-white/20 bg-stone-900 p-4 shadow-2xl text-stone-100 animate-in fade-in zoom-in-95 duration-100">
+                <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-3">
+                  <span className="text-xs font-bold uppercase tracking-wider text-stone-400">
+                    Reading Ambience
                   </span>
-                  <span className="text-[10px] opacity-60 font-mono">वातावरण चुनें</span>
-                </div>
-
-                {/* 4 Theme Options: Dark, Slate, Sepia, Light */}
-                <div className="space-y-1.5 mb-4">
-                  {/* Dark Mode */}
                   <button
-                    onClick={() => setReaderTheme('dark')}
-                    className={`w-full flex items-center justify-between rounded-xl px-3 py-2 text-xs font-medium transition-all border ${
-                      readerTheme === 'dark'
-                        ? 'bg-amber-500 text-stone-950 font-bold border-amber-500 shadow-xs'
-                        : 'bg-[#0B0D10] text-stone-200 border-white/10 hover:border-amber-500/50'
-                    }`}
+                    onClick={() => setShowThemePanel(false)}
+                    className="text-stone-400 hover:text-white cursor-pointer"
                   >
-                    <div className="flex items-center gap-2">
-                      <Moon className="h-4 w-4 text-amber-400" />
-                      <span>Dark Mode (डार्क - रात के लिए)</span>
-                    </div>
-                    {readerTheme === 'dark' && <Check className="h-3.5 w-3.5" />}
-                  </button>
-
-                  {/* Slate / Twilight */}
-                  <button
-                    onClick={() => setReaderTheme('slate')}
-                    className={`w-full flex items-center justify-between rounded-xl px-3 py-2 text-xs font-medium transition-all border ${
-                      readerTheme === 'slate'
-                        ? 'bg-amber-500 text-stone-950 font-bold border-amber-500 shadow-xs'
-                        : 'bg-[#1E2229] text-stone-200 border-white/10 hover:border-amber-500/50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Eye className="h-4 w-4 text-cyan-400" />
-                      <span>Slate (स्लेट - कम तनाव)</span>
-                    </div>
-                    {readerTheme === 'slate' && <Check className="h-3.5 w-3.5" />}
-                  </button>
-
-                  {/* Warm Sepia */}
-                  <button
-                    onClick={() => setReaderTheme('sepia')}
-                    className={`w-full flex items-center justify-between rounded-xl px-3 py-2 text-xs font-medium transition-all border ${
-                      readerTheme === 'sepia'
-                        ? 'bg-[#8B5A2B] text-white font-bold border-[#8B5A2B] shadow-xs'
-                        : 'bg-[#F4ECD8] text-[#2C2416] border-[#D9CDAD] hover:border-[#8B5A2B]'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="h-4 w-4 text-amber-700" />
-                      <span>Sepia (सेपिया - वॉर्म बुक)</span>
-                    </div>
-                    {readerTheme === 'sepia' && <Check className="h-3.5 w-3.5" />}
-                  </button>
-
-                  {/* Daylight Light */}
-                  <button
-                    onClick={() => setReaderTheme('light')}
-                    className={`w-full flex items-center justify-between rounded-xl px-3 py-2 text-xs font-medium transition-all border ${
-                      readerTheme === 'light'
-                        ? 'bg-amber-600 text-white font-bold border-amber-600 shadow-xs'
-                        : 'bg-[#FAF8F5] text-stone-900 border-black/10 hover:border-amber-600'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Sun className="h-4 w-4 text-amber-600" />
-                      <span>Light (लाइट - दिन के लिए)</span>
-                    </div>
-                    {readerTheme === 'light' && <Check className="h-3.5 w-3.5" />}
+                    <X className="h-4 w-4" />
                   </button>
                 </div>
 
-                {/* Eye-Care Night Contrast Inversion Toggle */}
-                <div className="pt-3 border-t border-black/10 dark:border-white/10">
-                  <div className="flex items-center justify-between text-xs">
+                {/* Background Themes */}
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="text-[11px] text-stone-400 block mb-2 font-medium">
+                      Canvas Tone
+                    </label>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {(['dark', 'slate', 'sepia', 'light'] as ReaderTheme[]).map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => setReaderTheme(t)}
+                          className={`flex flex-col items-center gap-1 p-2 rounded-xl border text-[11px] font-medium transition-all cursor-pointer ${
+                            readerTheme === t
+                              ? 'border-amber-500 bg-white/15 text-white font-bold'
+                              : 'border-white/10 hover:bg-white/5 text-stone-400'
+                          }`}
+                        >
+                          <div
+                            className={`h-4 w-4 rounded-full border ${
+                              t === 'dark'
+                                ? 'bg-stone-950 border-stone-700'
+                                : t === 'slate'
+                                ? 'bg-slate-900 border-slate-700'
+                                : t === 'sepia'
+                                ? 'bg-[#EDE4D0] border-[#D9CBB0]'
+                                : 'bg-white border-stone-300'
+                            }`}
+                          />
+                          <span className="capitalize">{t}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Invert Page Colors Toggle */}
+                  <div className="pt-2 border-t border-white/10 flex items-center justify-between">
                     <div>
-                      <div className="font-semibold text-xs flex items-center gap-1.5">
-                        <Moon className="h-3.5 w-3.5 text-amber-500" />
-                        <span>Invert Scanned Pages</span>
-                      </div>
-                      <div className="text-[10px] opacity-60">आँखों के तनाव से बचाव (रात में)</div>
+                      <span className="text-xs font-medium block">Night Scan Mode</span>
+                      <span className="text-[10px] text-stone-400">
+                        Invert harsh white scan pages
+                      </span>
                     </div>
                     <button
                       onClick={() => setInvertPageScan((v) => !v)}
                       className={`h-6 w-11 rounded-full transition-colors relative cursor-pointer ${
-                        invertPageScan ? 'bg-amber-500' : 'bg-stone-600'
+                        invertPageScan ? 'bg-amber-500' : 'bg-stone-700'
                       }`}
-                      title="Toggle inverted dark scan for reading in pitch dark"
+                      title="Toggle inverted PDF mode"
                     >
                       <div
                         className={`h-4 w-4 rounded-full bg-white transition-transform transform absolute top-1 left-1 ${
@@ -918,269 +755,7 @@ export const ArchiveInAppReader: React.FC = () => {
             )}
           </div>
 
-          {/* Voice Reader & TTS Audio Controls Popover */}
-          <div className="relative" ref={audioPanelRef}>
-            <button
-              onClick={() => setShowAudioPanel((v) => !v)}
-              className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-all cursor-pointer ${
-                showAudioPanel
-                  ? currentTheme.activeBtn
-                  : isPlayingAudio
-                  ? 'bg-amber-500 text-stone-950 font-bold ring-2 ring-amber-400/60 animate-pulse'
-                  : currentTheme.controlBtn
-              }`}
-              title="Voice Reader Settings (आवाज़, पिच व प्ले/पॉज़)"
-            >
-              {isPlayingAudio ? (
-                <AudioLines className="h-4 w-4 text-stone-950" />
-              ) : (
-                <Volume2 className="h-4 w-4" />
-              )}
-            </button>
-
-            {/* Audio Settings Popover Panel */}
-            {showAudioPanel && (
-              <div
-                className={`absolute right-0 top-full mt-2 w-80 sm:w-92 rounded-2xl border p-4 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150 ${currentTheme.headerBg} border-black/20 dark:border-white/15`}
-              >
-                {/* Popover Header */}
-                <div className="flex items-center justify-between pb-3 border-b border-black/10 dark:border-white/10">
-                  <div className="flex items-center gap-2">
-                    <AudioLines className="h-4 w-4 text-amber-500" />
-                    <span className="text-xs font-bold uppercase tracking-wider">
-                      वॉइस रीडर (Voice Reader)
-                    </span>
-                  </div>
-                  <span className="rounded-md bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-500">
-                    पेज {currentPage} / {totalPages}
-                  </span>
-                </div>
-
-                <div className="mt-3.5 space-y-3.5 text-xs">
-                  {/* Master 1-Button ON / OFF Toggle */}
-                  <div>
-                    <button
-                      onClick={toggleSpeechMaster}
-                      className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold shadow-md transition-all cursor-pointer ${
-                        isPlayingAudio
-                          ? 'bg-rose-600 hover:bg-rose-700 text-white ring-2 ring-rose-400/50'
-                          : 'bg-amber-500 hover:bg-amber-400 text-stone-950 ring-2 ring-amber-400/30'
-                      }`}
-                    >
-                      {isPlayingAudio ? (
-                        <>
-                          <Square className="h-4 w-4 fill-white" />
-                          <span>वाचन बंद करें (Turn Audio OFF)</span>
-                        </>
-                      ) : isAudioLoading ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin text-stone-950" />
-                          <span>पेज लोड हो रहा है...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Play className="h-4 w-4 fill-stone-950 text-stone-950" />
-                          <span>पेज {currentPage} सुनें (Turn Audio ON)</span>
-                        </>
-                      )}
-                    </button>
-
-                    {/* Playing pulse indicator */}
-                    {isPlayingAudio && (
-                      <div className="mt-1.5 flex items-center justify-center gap-2 text-[11px] text-amber-500 font-medium animate-pulse">
-                        <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
-                        <span>पेज {currentPage} का वाचन सक्रिय है...</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Voice Selector (आवाज़ चुनें) */}
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-semibold flex items-center gap-1.5 opacity-90">
-                      <Languages className="h-3.5 w-3.5 text-amber-500" />
-                      <span>Voice / वाचक की आवाज़</span>
-                    </label>
-                    <select
-                      value={selectedVoiceURI}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setSelectedVoiceURI(val);
-                        localStorage.setItem('mindrise_reader_voice', val);
-                        if (isPlayingAudio) {
-                          speakRunningPage(currentPage);
-                        }
-                      }}
-                      className="w-full rounded-xl border border-black/15 dark:border-white/15 bg-black/5 dark:bg-white/5 px-2.5 py-1.5 text-xs font-medium focus:border-amber-500 focus:outline-hidden"
-                    >
-                      {availableVoices.length === 0 ? (
-                        <option value="">सिस्टम डिफॉल्ट आवाज़ (Default)</option>
-                      ) : (
-                        <>
-                          {/* Prioritize Hindi / Indian Voices */}
-                          <optgroup label="हिन्दी व भारतीय भाषाएँ (Hindi & Indian)">
-                            {availableVoices
-                              .filter(
-                                (v) =>
-                                  v.lang.startsWith('hi') ||
-                                  v.lang.includes('IN') ||
-                                  v.name.toLowerCase().includes('hindi') ||
-                                  v.name.toLowerCase().includes('india')
-                              )
-                              .map((v) => (
-                                <option key={v.voiceURI} value={v.voiceURI}>
-                                  {v.name} ({v.lang})
-                                </option>
-                              ))}
-                          </optgroup>
-
-                          {/* English & Global Voices */}
-                          <optgroup label="अंग्रेजी व अन्य भाषाएँ (English & Other)">
-                            {availableVoices
-                              .filter(
-                                (v) =>
-                                  !v.lang.startsWith('hi') &&
-                                  !v.lang.includes('IN') &&
-                                  !v.name.toLowerCase().includes('hindi') &&
-                                  !v.name.toLowerCase().includes('india')
-                              )
-                              .slice(0, 30)
-                              .map((v) => (
-                                <option key={v.voiceURI} value={v.voiceURI}>
-                                  {v.name} ({v.lang})
-                                </option>
-                              ))}
-                          </optgroup>
-                        </>
-                      )}
-                    </select>
-                  </div>
-
-                  {/* Pitch Control Slider */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] font-semibold opacity-90">
-                      <span className="flex items-center gap-1.5">
-                        <Sliders className="h-3.5 w-3.5 text-amber-500" />
-                        <span>Pitch / स्वर की पिच</span>
-                      </span>
-                      <span className="font-mono text-amber-500">
-                        {audioPitch.toFixed(2)}x (
-                        {audioPitch < 0.85
-                          ? 'गंभीर / Deep'
-                          : audioPitch > 1.15
-                          ? 'तीक्ष्ण / High'
-                          : 'सामान्य / Normal'}
-                        )
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0.6"
-                      max="1.5"
-                      step="0.05"
-                      value={audioPitch}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value);
-                        setAudioPitch(val);
-                        localStorage.setItem('mindrise_reader_pitch', String(val));
-                      }}
-                      className="w-full accent-amber-500 cursor-pointer"
-                    />
-                    <div className="flex justify-between text-[10px] opacity-60">
-                      <span>0.6x (गंभीर)</span>
-                      <span>1.0x (सामान्य)</span>
-                      <span>1.5x (तीक्ष्ण)</span>
-                    </div>
-                  </div>
-
-                  {/* Speed / Rate Control Slider & Quick Presets */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] font-semibold opacity-90">
-                      <span>Speed / पढ़ने की गति</span>
-                      <span className="font-mono text-amber-500">{audioRate.toFixed(2)}x</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0.75"
-                      max="1.75"
-                      step="0.05"
-                      value={audioRate}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value);
-                        setAudioRate(val);
-                        localStorage.setItem('mindrise_reader_rate', String(val));
-                      }}
-                      className="w-full accent-amber-500 cursor-pointer"
-                    />
-                    <div className="flex items-center gap-1 pt-0.5">
-                      {[0.8, 1.0, 1.25, 1.5].map((speed) => (
-                        <button
-                          key={speed}
-                          onClick={() => {
-                            setAudioRate(speed);
-                            localStorage.setItem('mindrise_reader_rate', String(speed));
-                          }}
-                          className={`flex-1 rounded-lg py-1 text-[10px] font-semibold transition-all border ${
-                            Math.abs(audioRate - speed) < 0.05
-                              ? 'bg-amber-500 text-stone-950 border-amber-500 shadow-2xs'
-                              : 'bg-black/5 dark:bg-white/5 border-black/10 dark:border-white/10 hover:border-amber-500/50'
-                          }`}
-                        >
-                          {speed}x
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Auto-Read Next Page Switch */}
-                  <div className="flex items-center justify-between pt-1 border-t border-black/10 dark:border-white/10">
-                    <div>
-                      <div className="font-semibold text-[11px]">अगला पेज स्वतः पढ़ें</div>
-                      <div className="text-[10px] opacity-60">पेज खत्म होने पर स्वतः अगला पेज शुरू करें</div>
-                    </div>
-                    <button
-                      onClick={() => setAutoReadNextPage((v) => !v)}
-                      className={`h-5 w-9 rounded-full transition-colors relative cursor-pointer ${
-                        autoReadNextPage ? 'bg-amber-500' : 'bg-stone-600'
-                      }`}
-                      title="Toggle auto-read next page"
-                    >
-                      <div
-                        className={`h-3.5 w-3.5 rounded-full bg-white transition-transform transform absolute top-0.5 left-0.5 ${
-                          autoReadNextPage ? 'translate-x-4' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
-                  </div>
-
-                  {/* Extracted Page OCR Text Snippet */}
-                  <div className="space-y-1 pt-1 border-t border-black/10 dark:border-white/10">
-                    <div className="flex items-center justify-between text-[11px] font-semibold opacity-90">
-                      <span className="flex items-center gap-1">
-                        <FileText className="h-3 w-3 text-amber-500" />
-                        <span>पेज {currentPage} का मूल टेक्स्ट (Archive OCR)</span>
-                      </span>
-                      {hasTextForPage === false && (
-                        <span className="text-[10px] text-amber-500">चित्र / आवरण</span>
-                      )}
-                    </div>
-                    <div className="max-h-20 overflow-y-auto rounded-lg bg-black/10 dark:bg-black/30 p-2 text-[10.5px] leading-relaxed text-stone-600 dark:text-stone-300 font-sans scrollbar-thin">
-                      {currentPageText ? (
-                        currentPageText
-                      ) : isAudioLoading ? (
-                        <span className="italic opacity-60">Archive से टेक्स्ट प्राप्त किया जा रहा है...</span>
-                      ) : (
-                        <span className="italic opacity-60">
-                          इस पृष्ठ पर कोई मुद्रित पाठ नहीं मिला (चित्र या आवरण हो सकता है)।
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Bookmark / Library Button */}
+          {/* Bookmark */}
           <button
             onClick={toggleLibrary}
             className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-all cursor-pointer ${
@@ -1191,7 +766,7 @@ export const ArchiveInAppReader: React.FC = () => {
             {isSavedInLibrary ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
           </button>
 
-          {/* Fullscreen Toggle */}
+          {/* Fullscreen */}
           <button
             onClick={toggleFullscreen}
             className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-all cursor-pointer ${currentTheme.controlBtn}`}
@@ -1202,37 +777,87 @@ export const ArchiveInAppReader: React.FC = () => {
         </div>
       </header>
 
-      {/* 2. MAIN READING CANVAS VIEWPORT (Native desktop PDF scroll container) */}
-      <main
-        ref={viewportRef}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        className={`relative flex-1 ${currentTheme.canvasBg} overflow-auto select-none ${
-          isDragging ? 'cursor-grabbing' : 'cursor-default'
-        }`}
-        style={{
-          overscrollBehavior: 'contain',
+      {/* Floating In-Document Search Bar */}
+      {showSearchBar && activeRenderer === 'pdf' && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-stone-900 text-white px-4 py-2 rounded-2xl shadow-2xl border border-white/20 animate-in slide-in-from-top duration-150">
+          <Search className="h-4 w-4 text-amber-400 shrink-0" />
+          <input
+            type="text"
+            placeholder="Search words in this PDF..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handlePerformSearch(searchQuery);
+              }
+            }}
+            className="bg-transparent text-xs text-white placeholder-stone-400 focus:outline-hidden w-48 sm:w-64"
+            autoFocus
+          />
+          {isSearching && <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-400" />}
+          {searchResults.length > 0 && (
+            <div className="flex items-center gap-1.5 text-[11px] font-mono pl-1 border-l border-white/20">
+              <span>
+                {currentMatchIndex + 1}/{searchResults.length}
+              </span>
+              <button
+                onClick={goToPrevMatch}
+                className="p-1 hover:bg-white/10 rounded-md cursor-pointer"
+                title="Previous Match"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={goToNextMatch}
+                className="p-1 hover:bg-white/10 rounded-md cursor-pointer"
+                title="Next Match"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+          <button
+            onClick={() => handlePerformSearch(searchQuery)}
+            className="px-2 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-stone-950 text-[11px] font-bold cursor-pointer transition-all"
+          >
+            Search
+          </button>
+          <button
+            onClick={() => setShowSearchBar(false)}
+            className="p-1 hover:bg-white/10 rounded-md cursor-pointer opacity-60 hover:opacity-100"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Thumbnails Sidebar */}
+      <PdfThumbnailSidebar
+        pdfUrl={repResult?.representations.pdf.url || ''}
+        totalPages={totalPages}
+        currentPage={currentPage}
+        isOpen={showThumbnails}
+        onClose={() => setShowThumbnails(false)}
+        onSelectPage={(p) => {
+          setCurrentPage(p);
+          handleSaveProgress(p);
         }}
-      >
-        {/* Floating Desktop PDF Viewer Zoom Controls (Sticky & Synchronized) */}
-        <div className="sticky top-3 z-30 flex items-center justify-center pointer-events-none mb-[-42px]">
+        outline={outline}
+        readerTheme={readerTheme}
+      />
+
+      {/* Floating Zoom & Display Bar (Visible for PDF & ImageStack) */}
+      {(activeRenderer === 'pdf' || activeRenderer === 'image_stack') && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
           <div className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-black/15 dark:border-white/15 bg-black/85 dark:bg-stone-950/90 backdrop-blur-md px-3.5 py-1.5 text-white text-xs shadow-2xl">
-            {/* Zoom Out */}
             <button
-              onClick={handleZoomOut}
+              onClick={() => handleZoomOut()}
               className="p-1 hover:text-amber-400 cursor-pointer transition-colors rounded-full hover:bg-white/10"
-              title="Zoom Out (Ctrl - or Touchpad Pinch In)"
-              aria-label="Zoom Out"
+              title="Zoom Out (Ctrl -)"
             >
               <ZoomOut className="h-3.5 w-3.5" />
             </button>
 
-            {/* Synchronized Zoom Percentage Display */}
             <button
               onClick={handleResetZoom}
               className="font-mono text-[11px] px-2 font-semibold text-amber-400 min-w-[50px] text-center hover:underline cursor-pointer"
@@ -1241,138 +866,186 @@ export const ArchiveInAppReader: React.FC = () => {
               {Math.round(pageZoom)}%
             </button>
 
-            {/* Zoom In */}
             <button
-              onClick={handleZoomIn}
+              onClick={() => handleZoomIn()}
               className="p-1 hover:text-amber-400 cursor-pointer transition-colors rounded-full hover:bg-white/10"
-              title="Zoom In (Ctrl + or Touchpad Pinch Out)"
-              aria-label="Zoom In"
+              title="Zoom In (Ctrl +)"
             >
               <ZoomIn className="h-3.5 w-3.5" />
             </button>
 
             <span className="opacity-25 select-none">|</span>
 
-            {/* Reset Zoom */}
             <button
               onClick={handleResetZoom}
               className="px-2 py-0.5 rounded-md hover:bg-white/10 text-[11px] font-sans flex items-center gap-1 text-stone-200 hover:text-white cursor-pointer transition-colors"
-              title="Reset Zoom to 100% (Ctrl 0)"
+              title="Reset Zoom to 100%"
             >
               <RotateCcw className="h-3 w-3" />
               <span>Reset</span>
             </button>
 
-            {/* Fit Width */}
             <button
               onClick={handleFitWidth}
               className="hidden sm:flex px-2 py-0.5 rounded-md hover:bg-white/10 text-[11px] font-sans items-center gap-1 text-stone-200 hover:text-white cursor-pointer transition-colors"
-              title="Fit Page to Window Width"
+              title="Fit to Window Width"
             >
               <Maximize2 className="h-3 w-3" />
               <span>Fit Width</span>
             </button>
 
-            {/* Fit Page */}
             <button
               onClick={handleFitPage}
               className="hidden md:flex px-2 py-0.5 rounded-md hover:bg-white/10 text-[11px] font-sans items-center gap-1 text-stone-200 hover:text-white cursor-pointer transition-colors"
-              title="Fit Entire Page to Window Height"
+              title="Fit Entire Page"
             >
               <Eye className="h-3 w-3" />
               <span>Fit Page</span>
             </button>
-
-            <span className="hidden lg:inline opacity-25 select-none">|</span>
-            <span className="hidden lg:inline text-[10px] text-stone-400 font-sans">
-              Touchpad: 2-finger scroll & pinch zoom
-            </span>
           </div>
         </div>
+      )}
 
-        {/* Left Navigation Zone (Click to go Previous Page) */}
-        <div
-          onClick={(e) => {
-            if (pageZoom <= 100) goToPrevPage();
-          }}
-          className={`absolute left-0 top-0 bottom-0 w-16 sm:w-24 z-20 flex items-center justify-start pl-3 ${
-            pageZoom <= 100 ? 'cursor-w-resize group' : 'pointer-events-none'
-          }`}
-          title="Previous Page (← Arrow Left)"
-        >
-          <button
-            disabled={currentPage <= 1}
-            className={`h-11 w-11 rounded-full border flex items-center justify-center opacity-0 group-hover:opacity-90 disabled:opacity-0 transition-all shadow-xl cursor-pointer ${currentTheme.headerBg} border-black/10 dark:border-white/20`}
-          >
-            <ChevronLeft className="h-6 w-6" />
-          </button>
-        </div>
+      {/* Screen Left Page Navigation Button */}
+      <button
+        onClick={goToPrevPage}
+        disabled={currentPage <= 1}
+        className="fixed left-3 sm:left-6 top-1/2 -translate-y-1/2 z-40 h-11 w-11 sm:h-13 sm:w-13 rounded-full border border-black/20 dark:border-white/20 bg-stone-900/90 text-white backdrop-blur-md flex items-center justify-center shadow-2xl hover:bg-amber-500 hover:text-stone-950 active:scale-95 disabled:opacity-20 disabled:pointer-events-none transition-all cursor-pointer group"
+        title="Previous Page (← Arrow Left)"
+        aria-label="Previous Page"
+      >
+        <ChevronLeft className="h-6 w-6 sm:h-7 sm:w-7 group-hover:-translate-x-0.5 transition-transform" />
+      </button>
 
-        {/* Right Navigation Zone (Click to go Next Page) */}
-        <div
-          onClick={(e) => {
-            if (pageZoom <= 100) goToNextPage();
-          }}
-          className={`absolute right-0 top-0 bottom-0 w-16 sm:w-24 z-20 flex items-center justify-end pr-3 ${
-            pageZoom <= 100 ? 'cursor-e-resize group' : 'pointer-events-none'
-          }`}
-          title="Next Page (→ Arrow Right)"
-        >
-          <button
-            disabled={currentPage >= totalPages}
-            className={`h-11 w-11 rounded-full border flex items-center justify-center opacity-0 group-hover:opacity-90 disabled:opacity-0 transition-all shadow-xl cursor-pointer ${currentTheme.headerBg} border-black/10 dark:border-white/20`}
-          >
-            <ChevronRight className="h-6 w-6" />
-          </button>
-        </div>
+      {/* Screen Right Page Navigation Button */}
+      <button
+        onClick={goToNextPage}
+        disabled={currentPage >= totalPages}
+        className="fixed right-3 sm:right-6 top-1/2 -translate-y-1/2 z-40 h-11 w-11 sm:h-13 sm:w-13 rounded-full border border-black/20 dark:border-white/20 bg-stone-900/90 text-white backdrop-blur-md flex items-center justify-center shadow-2xl hover:bg-amber-500 hover:text-stone-950 active:scale-95 disabled:opacity-20 disabled:pointer-events-none transition-all cursor-pointer group"
+        title="Next Page (→ Arrow Right)"
+        aria-label="Next Page"
+      >
+        <ChevronRight className="h-6 w-6 sm:h-7 sm:w-7 group-hover:translate-x-0.5 transition-transform" />
+      </button>
 
-        {/* Scaled PDF Document Stage */}
-        <div className="min-h-full min-w-full flex items-center justify-center p-4 sm:p-8 md:p-12 pt-14">
-          <div
-            ref={pageWrapperRef}
-            className="relative shrink-0 transition-[width] duration-100 ease-out flex flex-col items-center justify-center"
-            style={{
-              width: `${Math.round(850 * (pageZoom / 100))}px`,
-              maxWidth: 'none',
-            }}
-          >
-            {pageImageLoading && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-xs rounded-xl z-10 text-white">
-                <Loader2 className="h-9 w-9 animate-spin text-amber-400 mb-2" />
-                <div className="font-serif text-xs font-semibold">Loading Page {currentPage}...</div>
-              </div>
+      {/* 2. MAIN READING CANVAS VIEWPORT */}
+      <main
+        ref={viewportRef}
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        tabIndex={0}
+        className={`relative flex-1 ${currentTheme.canvasBg} overflow-y-auto overflow-x-auto ${
+          isDragging ? 'cursor-grabbing' : 'cursor-default'
+        } focus:outline-hidden`}
+        style={{
+          overscrollBehavior: 'contain',
+        }}
+      >
+        {/* Loading / Opening Screen (Never a blank white page!) */}
+        {isDetecting ? (
+          <div className="min-h-full w-full flex flex-col items-center justify-center p-8 text-center space-y-4 my-auto">
+            <Loader2 className="h-10 w-10 animate-spin text-amber-500" />
+            <div className="space-y-1">
+              <h3 className="text-sm font-serif font-bold text-stone-200">
+                Opening Book...
+              </h3>
+              <p className="text-xs font-mono text-stone-400">
+                Loading reading view
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="min-h-full min-w-full w-max p-2 sm:p-6 md:p-8 pt-8 pb-20">
+            {/* RENDERER 1: NATIVE PDF VIEWER */}
+            {activeRenderer === 'pdf' && repResult?.representations.pdf.url && (
+              <PdfDocumentViewer
+                ref={viewerRef}
+                pdfUrl={repResult.representations.pdf.url}
+                bookIdentifier={activeArchiveReader.identifier}
+                currentPage={currentPage}
+                onPageChange={(p) => {
+                  setCurrentPage(p);
+                  handleSaveProgress(p);
+                }}
+                onDocumentLoaded={handleDocumentLoaded}
+                zoom={pageZoom}
+                readerTheme={readerTheme}
+                invertColors={invertPageScan}
+                viewMode={viewMode}
+                format="pdf"
+                onPdfError={() => handleRendererFailover('pdf')}
+              />
             )}
 
-            <img
-              key={`page-${activeArchiveReader.identifier}-${currentPage}-${targetWidth}`}
-              src={pageImageUrl}
-              alt={`Page ${currentPage} of ${activeArchiveReader.title}`}
-              onLoadStart={() => setPageImageLoading(true)}
-              onLoad={() => setPageImageLoading(false)}
-              onError={(e) => {
-                setPageImageLoading(false);
-                const target = e.target as HTMLImageElement;
-                const fallbackUrl = `https://archive.org/download/${activeArchiveReader.identifier}/page/leaf${currentPage}_medium.jpg`;
-                if (target.src !== fallbackUrl) {
-                  target.src = fallbackUrl;
-                }
-              }}
-              draggable={false}
-              className={`w-full h-auto object-contain rounded-lg ${currentTheme.pageShadow} transition-filter duration-200 select-none`}
-              style={{
-                filter: getFilterStyle(),
-                imageRendering: pageZoom > 100 ? 'high-quality' : 'auto',
-              }}
-            />
+            {/* RENDERER 2: SCANNED FACSIMILE IMAGE STACK */}
+            {activeRenderer === 'image_stack' && (
+              <ImageStackReader
+                bookIdentifier={activeArchiveReader.identifier}
+                bookTitle={activeArchiveReader.title}
+                currentPage={currentPage}
+                totalPages={totalPages}
+                zoom={pageZoom}
+                readerTheme={readerTheme}
+                invertColors={invertPageScan}
+                viewMode={viewMode}
+                onPageChange={(p) => {
+                  setCurrentPage(p);
+                  handleSaveProgress(p);
+                }}
+                onErrorFallback={() => handleRendererFailover('image_stack')}
+              />
+            )}
+
+            {/* RENDERER 3: INTERNET ARCHIVE BOOKREADER FLIPBOOK */}
+            {activeRenderer === 'bookreader' && (
+              <BookReaderViewer
+                bookIdentifier={activeArchiveReader.identifier}
+                currentPage={currentPage}
+                readerTheme={readerTheme}
+                onPageChange={(p) => {
+                  setCurrentPage(p);
+                  handleSaveProgress(p);
+                }}
+                onErrorFallback={() => handleRendererFailover('bookreader')}
+              />
+            )}
+
+            {/* RENDERER 4: OCR / CLEAN PLAIN TEXT */}
+            {activeRenderer === 'text' && (
+              <TextOcrReader
+                bookIdentifier={activeArchiveReader.identifier}
+                bookTitle={activeArchiveReader.title}
+                currentPage={currentPage}
+                totalPages={totalPages}
+                readerTheme={readerTheme}
+                onErrorFallback={() => handleRendererFailover('text')}
+              />
+            )}
+
+            {/* RENDERER 5: SAFE SOURCE ARCHIVE FALLBACK */}
+            {activeRenderer === 'fallback' && (
+              <FallbackSourceReader
+                bookIdentifier={activeArchiveReader.identifier}
+                bookTitle={activeArchiveReader.title}
+                creator={activeArchiveReader.creator}
+                coverUrl={activeArchiveReader.coverUrl}
+                onRetry={runAssetDetection}
+              />
+            )}
           </div>
-        </div>
+        )}
       </main>
 
       {/* 3. BOTTOM SCRUBBER & READING PROGRESS FOOTER */}
       <footer
         className={`flex h-12 items-center justify-between border-t ${currentTheme.footerBg} px-4 sm:px-6 text-xs shrink-0 z-30 transition-colors`}
       >
-        {/* Prev Page Button */}
         <button
           onClick={goToPrevPage}
           disabled={currentPage <= 1}
@@ -1388,7 +1061,7 @@ export const ArchiveInAppReader: React.FC = () => {
           <input
             type="range"
             min={1}
-            max={totalPages}
+            max={Math.max(1, totalPages)}
             value={currentPage}
             onChange={(e) => {
               const val = parseInt(e.target.value, 10);

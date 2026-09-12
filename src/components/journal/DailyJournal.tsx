@@ -15,8 +15,14 @@ import {
 import confetti from 'canvas-confetti';
 import { useData } from '../../context/DataContext';
 import { JournalEntry } from '../../types';
+import { BackButton } from '../common/BackButton';
 
-export const DailyJournal: React.FC = () => {
+interface DailyJournalProps {
+  onBack?: () => void;
+  setActiveTab?: (tab: string) => void;
+}
+
+export const DailyJournal: React.FC<DailyJournalProps> = ({ onBack }) => {
   const { journalEntries, saveJournalEntry, deleteJournalEntry, books } = useData();
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -110,13 +116,16 @@ export const DailyJournal: React.FC = () => {
     <div className="space-y-8 pb-16">
       {/* Header */}
       <div className="flex flex-col justify-between gap-4 border-b border-emerald-950/40 pb-6 sm:flex-row sm:items-center">
-        <div>
-          <h1 className="font-serif text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Daily Journal & Reflection
-          </h1>
-          <p className="mt-1 text-xs text-stone-400">
-            “The unexamined life is not worth living.” Synthesize reading into character and clarity.
-          </p>
+        <div className="flex flex-wrap items-center gap-3">
+          {onBack && <BackButton onClick={onBack} />}
+          <div>
+            <h1 className="font-serif text-3xl font-bold tracking-tight text-white sm:text-4xl">
+              Daily Journal & Reflection
+            </h1>
+            <p className="mt-1 text-xs text-stone-400">
+              “The unexamined life is not worth living.” Synthesize reading into character and clarity.
+            </p>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   collection,
   doc,
@@ -430,11 +431,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   ]);
 
   // Modals & Navigation state
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const [activeReaderBookId, setActiveReaderBookId] = useState<string | null>(null);
   const [activeBookDetailsId, setActiveBookDetailsId] = useState<string | null>(null);
   const [recentlyUnlockedAchievement, setRecentlyUnlockedAchievement] = useState<Achievement | null>(null);
   const [coachPromptInitial, setCoachPromptInitial] = useState<string | null>(null);
   const [navTabRequest, setNavTabRequest] = useState<string | null>(null);
+
+  const safeNavigateBack = useCallback((fallbackUrl: string = '/') => {
+    if (window.history.state && typeof window.history.state.idx === 'number' && window.history.state.idx > 0) {
+      navigate(-1);
+    } else {
+      navigate(fallbackUrl);
+    }
+  }, [navigate]);
 
   // Internet Archive Online Library State
   const [archiveLibrary, setArchiveLibrary] = useState<Record<string, ArchiveLibraryItem>>(() => {
@@ -465,15 +477,54 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const [archiveSearchQuery, setArchiveSearchQueryState] = useState<string>('Premchand');
 
+  // Synchronize router location with modal/reader state
+  useEffect(() => {
+    const path = location.pathname;
+
+    if (path.startsWith('/reader/')) {
+      const id = decodeURIComponent(path.substring('/reader/'.length));
+      setActiveReaderBookId(id);
+      setActiveBookDetailsId(null);
+      setActiveArchiveBookId(null);
+      setActiveArchiveReader(null);
+    } else if (path.startsWith('/archive/reader/')) {
+      const id = decodeURIComponent(path.substring('/archive/reader/'.length));
+      setActiveArchiveReader((prev) => {
+        if (prev && prev.identifier === id) return prev;
+        return { identifier: id, title: id };
+      });
+      setActiveArchiveBookId(null);
+      setActiveBookDetailsId(null);
+      setActiveReaderBookId(null);
+    } else if (path.startsWith('/book/')) {
+      const id = decodeURIComponent(path.substring('/book/'.length));
+      setActiveBookDetailsId(id);
+      setActiveReaderBookId(null);
+      setActiveArchiveBookId(null);
+      setActiveArchiveReader(null);
+    } else if (path.startsWith('/archive/book/')) {
+      const id = decodeURIComponent(path.substring('/archive/book/'.length));
+      setActiveArchiveBookId(id);
+      setActiveBookDetailsId(null);
+      setActiveReaderBookId(null);
+      setActiveArchiveReader(null);
+    } else {
+      setActiveBookDetailsId(null);
+      setActiveReaderBookId(null);
+      setActiveArchiveBookId(null);
+      setActiveArchiveReader(null);
+    }
+  }, [location.pathname]);
+
   const setArchiveSearchQuery = useCallback((query: string) => {
     setArchiveSearchQueryState(query);
-    setNavTabRequest('explore');
-  }, []);
+    navigate('/explore');
+  }, [navigate]);
 
   const openCoachWithPrompt = useCallback((prompt: string) => {
     setCoachPromptInitial(prompt);
-    setNavTabRequest('coach');
-  }, []);
+    navigate('/coach');
+  }, [navigate]);
 
   const clearNavTabRequest = useCallback(() => {
     setNavTabRequest(null);
@@ -691,22 +742,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [firebaseUser]);
 
   // Internet Archive action methods
-  const openArchiveBookDetails = (identifier: string) => {
-    setActiveArchiveBookId(identifier);
-  };
+  const openArchiveBookDetails = useCallback((identifier: string) => {
+    navigate(`/archive/book/${encodeURIComponent(identifier)}`);
+  }, [navigate]);
 
-  const closeArchiveBookDetails = () => {
-    setActiveArchiveBookId(null);
-  };
+  const closeArchiveBookDetails = useCallback(() => {
+    safeNavigateBack('/explore');
+  }, [safeNavigateBack]);
 
-  const openArchiveReader = (book: { identifier: string; title: string; creator?: string; coverUrl?: string }) => {
-    setActiveArchiveBookId(null);
+  const openArchiveReader = useCallback((book: { identifier: string; title: string; creator?: string; coverUrl?: string }) => {
     setActiveArchiveReader(book);
-  };
+    navigate(`/archive/reader/${encodeURIComponent(book.identifier)}`);
+  }, [navigate]);
 
-  const closeArchiveReader = () => {
-    setActiveArchiveReader(null);
-  };
+  const closeArchiveReader = useCallback(() => {
+    safeNavigateBack('/explore');
+  }, [safeNavigateBack]);
 
   const saveArchiveReadingProgress = async (progress: ArchiveReadingProgress) => {
     setArchiveProgress((prev) => {
@@ -804,22 +855,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const openReader = (bookId: string) => {
-    setActiveBookDetailsId(null);
-    setActiveReaderBookId(bookId);
-  };
+  const openReader = useCallback((bookId: string) => {
+    navigate(`/reader/${encodeURIComponent(bookId)}`);
+  }, [navigate]);
 
-  const closeReader = () => {
-    setActiveReaderBookId(null);
-  };
+  const closeReader = useCallback(() => {
+    safeNavigateBack('/library');
+  }, [safeNavigateBack]);
 
-  const openBookDetails = (bookId: string) => {
-    setActiveBookDetailsId(bookId);
-  };
+  const openBookDetails = useCallback((bookId: string) => {
+    navigate(`/book/${encodeURIComponent(bookId)}`);
+  }, [navigate]);
 
-  const closeBookDetails = () => {
-    setActiveBookDetailsId(null);
-  };
+  const closeBookDetails = useCallback(() => {
+    safeNavigateBack('/explore');
+  }, [safeNavigateBack]);
 
   const closeAchievementModal = () => {
     setRecentlyUnlockedAchievement(null);

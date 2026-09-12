@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DataProvider, useData } from './context/DataContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
@@ -40,7 +41,9 @@ const MainAppContent: React.FC = () => {
   const { activeReaderBookId, activeArchiveReader, navTabRequest, clearNavTabRequest } = useData();
   const { theme } = useTheme();
 
-  const [activeTab, setActiveTab] = useState<string>('home');
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAIChatOpen, setIsAIChatOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -48,13 +51,56 @@ const MainAppContent: React.FC = () => {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authNotice, setAuthNotice] = useState<string | undefined>(undefined);
 
+  const getTabFromPathname = useCallback((pathname: string): string => {
+    if (pathname === '/' || pathname === '/home') return 'home';
+    if (pathname.startsWith('/explore')) return 'explore';
+    if (pathname.startsWith('/categories') || pathname.startsWith('/subjects')) return 'categories';
+    if (pathname.startsWith('/library') || pathname.startsWith('/downloads') || pathname.startsWith('/bookmarks')) return 'library';
+    if (pathname.startsWith('/habits') || pathname.startsWith('/habit-tracker')) return 'habits';
+    if (pathname.startsWith('/journal') || pathname.startsWith('/daily-journal') || pathname.startsWith('/calendar') || pathname.startsWith('/focus')) return 'journal';
+    if (pathname.startsWith('/notes') || pathname.startsWith('/highlights')) return 'notes';
+    if (pathname.startsWith('/goals') || pathname.startsWith('/reading-goals')) return 'goals';
+    if (pathname.startsWith('/challenges')) return 'challenges';
+    if (pathname.startsWith('/analytics') || pathname.startsWith('/stats')) return 'analytics';
+    if (pathname.startsWith('/collections')) return 'collections';
+    if (pathname.startsWith('/coach') || pathname.startsWith('/ai')) return 'coach';
+    if (pathname.startsWith('/community')) return 'community';
+    if (pathname.startsWith('/premium')) return 'premium';
+    if (pathname.startsWith('/profile') || pathname.startsWith('/settings')) return 'profile';
+    if (pathname.startsWith('/admin')) return 'admin';
+
+    if (pathname.startsWith('/book/') || pathname.startsWith('/reader/')) return 'library';
+    if (pathname.startsWith('/archive/')) return 'explore';
+
+    return 'home';
+  }, []);
+
+  const activeTab = useMemo(() => {
+    return getTabFromPathname(location.pathname);
+  }, [location.pathname, getTabFromPathname]);
+
+  const handleSetActiveTab = useCallback((tab: string) => {
+    const targetPath = tab === 'home' ? '/' : `/${tab}`;
+    if (location.pathname !== targetPath) {
+      navigate(targetPath);
+    }
+  }, [location.pathname, navigate]);
+
+  const handleBack = useCallback(() => {
+    if (window.history.state && typeof window.history.state.idx === 'number' && window.history.state.idx > 0) {
+      navigate(-1);
+    } else {
+      navigate('/');
+    }
+  }, [navigate]);
+
   // Listen to navigation requests from context (e.g. coach open)
   useEffect(() => {
     if (navTabRequest) {
-      setActiveTab(navTabRequest);
+      handleSetActiveTab(navTabRequest);
       clearNavTabRequest();
     }
-  }, [navTabRequest, clearNavTabRequest]);
+  }, [navTabRequest, clearNavTabRequest, handleSetActiveTab]);
 
   // Global hotkey: Cmd+K / Ctrl+K opens search
   useEffect(() => {
@@ -135,31 +181,31 @@ const MainAppContent: React.FC = () => {
   const renderActiveView = () => {
     switch (activeTab) {
       case 'home':
-        return <HomeDashboard setActiveTab={setActiveTab} />;
+        return <HomeDashboard setActiveTab={handleSetActiveTab} />;
       case 'explore':
-        return <ExploreBooks onBack={() => setActiveTab('home')} />;
+        return <ExploreBooks onBack={handleBack} />;
       case 'categories':
-        return <CategoriesView />;
+        return <CategoriesView onBack={handleBack} onSelectCategory={() => handleSetActiveTab('explore')} />;
       case 'library':
-        return <MyLibrary setActiveTab={setActiveTab} />;
+        return <MyLibrary setActiveTab={handleSetActiveTab} onBack={handleBack} />;
       case 'habits':
-        return <HabitTracker />;
+        return <HabitTracker onBack={handleBack} />;
       case 'journal':
-        return <DailyJournal />;
+        return <DailyJournal onBack={handleBack} />;
       case 'notes':
-        return <NotesVault />;
+        return <NotesVault onBack={handleBack} />;
       case 'coach':
-        return <MindRiseCoach />;
+        return <MindRiseCoach onBack={handleBack} />;
       case 'community':
-        return <CommunityView />;
+        return <CommunityView onBack={handleBack} />;
       case 'premium':
-        return <PremiumView />;
+        return <PremiumView onBack={handleBack} />;
       case 'profile':
-        return <UserProfile />;
+        return <UserProfile onBack={handleBack} />;
       case 'admin':
-        return <AdminConsole />;
+        return <AdminConsole onBack={handleBack} />;
       default:
-        return <HomeDashboard setActiveTab={setActiveTab} />;
+        return <HomeDashboard setActiveTab={handleSetActiveTab} />;
     }
   };
 
@@ -184,7 +230,7 @@ const MainAppContent: React.FC = () => {
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleSetActiveTab}
       />
 
       {/* Main Column */}
@@ -192,7 +238,7 @@ const MainAppContent: React.FC = () => {
         {/* Top Navbar with 3-lines menu button */}
         <Navbar
           activeTab={activeTab}
-          setActiveTab={setActiveTab}
+          setActiveTab={handleSetActiveTab}
           onOpenSearch={() => setIsSearchOpen(true)}
           onOpenAuth={(mode) => {
             setAuthMode(mode);
@@ -203,16 +249,16 @@ const MainAppContent: React.FC = () => {
 
         {/* View Content Area */}
         <main className={`flex-1 overflow-y-auto pb-24 md:pb-6 ${getMainBg()}`}>
-          <div className={`mx-auto w-full ${activeTab === 'explore' ? 'max-w-[1800px] px-3 sm:px-5 lg:px-7 py-5' : 'max-w-7xl px-4 sm:px-6 lg:px-8 py-6'}`}>
+          <div className={`mx-auto w-full ${activeTab === 'explore' || activeTab === 'home' ? 'max-w-[1850px] px-3 sm:px-6 lg:px-10 py-5' : 'max-w-7xl px-4 sm:px-6 lg:px-8 py-6'}`}>
             {renderActiveView()}
           </div>
 
           {/* Open Library & MindRise Classic Footer - only on Explore tab */}
-          {activeTab === 'explore' && <Footer setActiveTab={setActiveTab} />}
+          {activeTab === 'explore' && <Footer setActiveTab={handleSetActiveTab} />}
         </main>
 
         {/* Mobile Bottom Navigation */}
-        <MobileNav activeTab={activeTab} setActiveTab={setActiveTab} />
+        <MobileNav activeTab={activeTab} setActiveTab={handleSetActiveTab} />
       </div>
 
       {/* Floating Groq AI Assistant Button - safely positioned above mobile bottom bar */}
@@ -242,7 +288,7 @@ const MainAppContent: React.FC = () => {
       <SearchModal
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
-        onSelectTab={(tab) => setActiveTab(tab)}
+        onSelectTab={(tab) => handleSetActiveTab(tab)}
       />
 
       <AuthModal

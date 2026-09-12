@@ -15,8 +15,14 @@ import {
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { ReadingStatus, LibraryItem, ArchiveLibraryItem } from '../../types';
+import { BackButton } from '../common/BackButton';
 
-export const MyLibrary: React.FC<{ setActiveTab: (tab: string) => void }> = ({ setActiveTab }) => {
+interface MyLibraryProps {
+  setActiveTab: (tab: string) => void;
+  onBack?: () => void;
+}
+
+export const MyLibrary: React.FC<MyLibraryProps> = ({ setActiveTab, onBack }) => {
   const {
     books,
     library,
@@ -28,7 +34,7 @@ export const MyLibrary: React.FC<{ setActiveTab: (tab: string) => void }> = ({ s
     archiveLibrary,
     archiveProgress,
     openArchiveReader,
-    openArchiveDetails,
+    openArchiveBookDetails,
     removeArchiveFromLibrary
   } = useData();
 
@@ -60,13 +66,16 @@ export const MyLibrary: React.FC<{ setActiveTab: (tab: string) => void }> = ({ s
     <div className="space-y-8 pb-16">
       {/* Header */}
       <div className="flex flex-col justify-between gap-4 border-b border-black/10 dark:border-white/10 pb-6 sm:flex-row sm:items-center">
-        <div>
-          <h1 className="font-serif text-3xl font-bold tracking-tight text-[#1A1A1A] dark:text-white sm:text-4xl">
-            My Personal Library
-          </h1>
-          <p className="mt-1 text-xs text-[#666] dark:text-stone-400">
-            Your personal digital vault of active journeys, Internet Archive bookmarks, and finished volumes.
-          </p>
+        <div className="flex flex-wrap items-center gap-3">
+          {onBack && <BackButton onClick={onBack} />}
+          <div>
+            <h1 className="font-serif text-3xl font-bold tracking-tight text-[#1A1A1A] dark:text-white sm:text-4xl">
+              My Personal Library
+            </h1>
+            <p className="mt-1 text-xs text-[#666] dark:text-stone-400">
+              Your personal digital vault of active journeys, Internet Archive bookmarks, and finished volumes.
+            </p>
+          </div>
         </div>
 
         <button
@@ -169,7 +178,7 @@ export const MyLibrary: React.FC<{ setActiveTab: (tab: string) => void }> = ({ s
                 <div className="flex gap-4">
                   {/* Book Cover */}
                   <div
-                    onClick={() => openArchiveDetails(item.identifier)}
+                    onClick={() => openArchiveBookDetails(item.identifier)}
                     className="relative shrink-0 cursor-pointer overflow-hidden rounded-xl border border-black/10 dark:border-stone-800 shadow-md w-24 aspect-[3/4] bg-[#f5f1e8] dark:bg-stone-900"
                   >
                     <img
@@ -189,7 +198,7 @@ export const MyLibrary: React.FC<{ setActiveTab: (tab: string) => void }> = ({ s
                       <span>Internet Archive</span>
                     </div>
                     <h3
-                      onClick={() => openArchiveDetails(item.identifier)}
+                      onClick={() => openArchiveBookDetails(item.identifier)}
                       className="cursor-pointer font-serif text-sm font-bold text-[#1A1A1A] dark:text-white line-clamp-2 hover:text-amber-700 dark:hover:text-amber-300 transition-colors mt-0.5"
                     >
                       {item.title}
@@ -220,7 +229,7 @@ export const MyLibrary: React.FC<{ setActiveTab: (tab: string) => void }> = ({ s
                     onClick={() => openArchiveReader({
                       identifier: item.identifier,
                       title: item.title,
-                      author: item.author,
+                      creator: item.author || (item as any).creator,
                       coverUrl: item.coverUrl
                     })}
                     className="flex items-center gap-1.5 rounded-lg bg-amber-600 text-white px-3 py-1.5 text-xs font-semibold shadow-xs hover:bg-amber-700 transition-all"

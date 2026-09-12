@@ -14,6 +14,8 @@ export interface ArchiveBookItem {
   publicDate?: string;
   coverUrl: string;
   mediatype?: string;
+  pages?: number;
+  imagecount?: number;
 }
 
 export interface ArchiveFile {
@@ -27,6 +29,8 @@ export interface ArchiveFile {
   sha1?: string;
   original?: string;
   title?: string;
+  pages?: string | number;
+  length?: string | number;
 }
 
 export interface ReadableResource {
@@ -57,6 +61,7 @@ export interface ArchiveItemMetadata {
   files: ArchiveFile[];
   readableResource: ReadableResource | null;
   imagecount?: number;
+  pages?: number;
   server?: string;
   dir?: string;
 }

@@ -50,7 +50,14 @@ import {
 } from '../../utils/imagePreprocessing';
 import { evaluateHindiTextQuality } from '../../utils/textValidation';
 
-export const AdminConsole: React.FC = () => {
+import { BackButton } from '../common/BackButton';
+
+interface AdminConsoleProps {
+  onBack?: () => void;
+  setActiveTab?: (tab: string) => void;
+}
+
+export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
   const { isAdmin } = useAuth();
   const {
     books,
@@ -572,18 +579,21 @@ export const AdminConsole: React.FC = () => {
       />
 
       {/* Header */}
-      <div className="flex flex-col justify-between gap-4 border-b border-purple-950/60 pb-6 sm:flex-row sm:items-center">
-        <div>
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-purple-800/50 bg-purple-950/40 px-3 py-1 text-[11px] font-semibold text-purple-300">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            <span>MindRise Platform Custodian</span>
+      <div className="flex flex-col justify-between gap-4 border-b border-purple-950/60 pb-6 sm:flex-row sm:items-center font-sans">
+        <div className="flex flex-wrap items-center gap-3">
+          {onBack && <BackButton onClick={onBack} />}
+          <div>
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-purple-800/50 bg-purple-950/40 px-3 py-1 text-[11px] font-semibold text-purple-300">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              <span>MindRise Platform Custodian</span>
+            </div>
+            <h1 className="mt-2 font-serif text-3xl font-bold tracking-tight text-white sm:text-4xl">
+              Universal Hindi PDF & OCR Digitizer
+            </h1>
+            <p className="mt-1 text-xs text-stone-400">
+              Adaptive Multi-Filter Preprocessing • Strict Glyph & Matra Corruption Detection • 300 DPI Tesseract Hindi Engine
+            </p>
           </div>
-          <h1 className="mt-2 font-serif text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Universal Hindi PDF & OCR Digitizer
-          </h1>
-          <p className="mt-1 text-xs text-stone-400">
-            Adaptive Multi-Filter Preprocessing • Strict Glyph & Matra Corruption Detection • 300 DPI Tesseract Hindi Engine
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">

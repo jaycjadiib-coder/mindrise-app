@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   Sparkles,
   Send,
@@ -18,6 +20,8 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 
+import { BackButton } from '../common/BackButton';
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -25,7 +29,12 @@ interface Message {
   timestamp: string;
 }
 
-export const MindRiseCoach: React.FC = () => {
+interface MindRiseCoachProps {
+  onBack?: () => void;
+  setActiveTab?: (tab: string) => void;
+}
+
+export const MindRiseCoach: React.FC<MindRiseCoachProps> = ({ onBack }) => {
   const { user } = useAuth();
   const { coachPromptInitial, openCoachWithPrompt } = useData();
 
@@ -236,7 +245,8 @@ export const MindRiseCoach: React.FC = () => {
       {/* Coach Header */}
       <div className="flex items-center justify-between border-b border-[#1E2638] bg-[#141A29] px-6 py-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 border border-emerald-400/30 text-slate-950 shadow-md">
+          {onBack && <BackButton onClick={onBack} className="mr-1" />}
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 border border-emerald-400/30 text-slate-950 shadow-md shrink-0">
             <Sparkles className="h-5 w-5 text-slate-950" />
           </div>
           <div>
@@ -290,9 +300,17 @@ export const MindRiseCoach: React.FC = () => {
                   : 'border border-[#242E42] bg-[#161D2C] text-[#E2E8F0] shadow-sm'
               }`}
             >
-              <div className="whitespace-pre-wrap font-sans text-xs sm:text-[13px] leading-relaxed">
-                {m.content || (loading && idx === messages.length - 1 ? 'Generating...' : '')}
-              </div>
+              {m.role === 'assistant' ? (
+                <div className="prose prose-invert max-w-none text-xs sm:text-[13px] leading-relaxed space-y-2 [&>p]:mb-2.5 [&>ul]:list-disc [&>ul]:pl-5 [&>ol]:list-decimal [&>ol]:pl-5 [&>h1]:text-base [&>h1]:font-bold [&>h2]:text-sm [&>h2]:font-bold [&>h3]:text-xs [&>h3]:font-semibold [&>blockquote]:border-l-2 [&>blockquote]:border-emerald-500 [&>blockquote]:pl-3 [&>blockquote]:italic [&_strong]:text-emerald-300">
+                  <Markdown remarkPlugins={[remarkGfm]}>
+                    {m.content || (loading && idx === messages.length - 1 ? 'Generating response...' : '')}
+                  </Markdown>
+                </div>
+              ) : (
+                <div className="whitespace-pre-wrap font-sans text-xs sm:text-[13px] leading-relaxed">
+                  {m.content}
+                </div>
+              )}
 
               <div
                 className={`mt-2 flex items-center justify-between text-[10px] ${

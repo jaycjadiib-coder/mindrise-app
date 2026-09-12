@@ -103,7 +103,8 @@ export interface NoteItem {
   page: number;
   selectedText: string;
   note?: string;
-  highlightColor?: 'yellow' | 'green' | 'blue' | 'pink';
+  highlightColor?: 'yellow' | 'green' | 'blue' | 'pink' | string;
+  color?: string;
   type: 'highlight' | 'note' | 'bookmark';
   createdAt: string;
 }
@@ -208,6 +209,7 @@ export interface CategoryItem {
   id: string;
   name: string;
   description: string;
+  desc?: string;
   icon: string;
   bookCount: number;
   imageUrl: string;
@@ -277,6 +279,7 @@ export interface NotificationItem {
   type: 'reading' | 'habit' | 'goal' | 'challenge' | 'achievement' | 'system';
   read: boolean;
   createdAt: string;
+  timestamp?: string;
   linkTab?: string;
 }
 

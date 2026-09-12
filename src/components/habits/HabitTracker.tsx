@@ -13,13 +13,19 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useData } from '../../context/DataContext';
+import { BackButton } from '../common/BackButton';
 
-export const HabitTracker: React.FC = () => {
+interface HabitTrackerProps {
+  onBack?: () => void;
+  setActiveTab?: (tab: string) => void;
+}
+
+export const HabitTracker: React.FC<HabitTrackerProps> = ({ onBack }) => {
   const { habits, habitLogs, toggleHabit, addHabit, deleteHabit } = useData();
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [name, setName] = useState('');
-  const [category, setCategory] = useState('Discipline');
+  const [category, setCategory] = useState<'mindset' | 'health' | 'productivity' | 'focus' | 'discipline' | 'learning'>('discipline');
   const [frequency, setFrequency] = useState<'daily' | 'weekly'>('daily');
 
   // Compute the past 7 days (today is the last)
@@ -45,6 +51,8 @@ export const HabitTracker: React.FC = () => {
       category,
       frequency,
       color: 'emerald',
+      target: 1,
+      icon: 'target',
     });
 
     confetti({ particleCount: 40, spread: 60 });
@@ -59,13 +67,16 @@ export const HabitTracker: React.FC = () => {
     <div className="space-y-8 pb-16">
       {/* Header */}
       <div className="flex flex-col justify-between gap-4 border-b border-emerald-950/40 pb-6 sm:flex-row sm:items-center">
-        <div>
-          <h1 className="font-serif text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Habits & Daily Systems
-          </h1>
-          <p className="mt-1 text-xs text-stone-400">
-            “You do not rise to the level of your goals. You fall to the level of your systems.”
-          </p>
+        <div className="flex flex-wrap items-center gap-3">
+          {onBack && <BackButton onClick={onBack} />}
+          <div>
+            <h1 className="font-serif text-3xl font-bold tracking-tight text-white sm:text-4xl">
+              Habits & Daily Systems
+            </h1>
+            <p className="mt-1 text-xs text-stone-400">
+              “You do not rise to the level of your goals. You fall to the level of your systems.”
+            </p>
+          </div>
         </div>
 
         <button
@@ -237,14 +248,15 @@ export const HabitTracker: React.FC = () => {
                   <label className="block text-stone-400 mb-1">Category</label>
                   <select
                     value={category}
-                    onChange={(e) => setCategory(e.target.value)}
+                    onChange={(e) => setCategory(e.target.value as any)}
                     className="w-full rounded-xl border border-stone-800 bg-stone-900/60 p-2.5 text-white outline-none"
                   >
-                    <option value="Discipline">Discipline</option>
-                    <option value="Mindset">Mindset</option>
-                    <option value="Productivity">Productivity</option>
-                    <option value="Health">Health</option>
-                    <option value="Reading">Reading</option>
+                    <option value="discipline">Discipline</option>
+                    <option value="mindset">Mindset</option>
+                    <option value="productivity">Productivity</option>
+                    <option value="health">Health</option>
+                    <option value="focus">Focus</option>
+                    <option value="learning">Learning</option>
                   </select>
                 </div>
 

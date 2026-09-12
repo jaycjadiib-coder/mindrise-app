@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   Sparkles,
   Send,
@@ -378,7 +380,15 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({ isOpen, onClose }) =
                     : 'bg-[#1C2333] text-[#E2E8F0] border border-[#2B374E] rounded-tl-xs shadow-sm'
                 }`}
               >
-                <div className="whitespace-pre-wrap break-words">{m.content || (loading && idx === messages.length - 1 ? 'Thinking...' : '')}</div>
+                {m.role === 'assistant' ? (
+                  <div className="prose prose-invert max-w-none text-xs leading-relaxed space-y-1.5 [&>p]:mb-2 [&>ul]:list-disc [&>ul]:pl-4 [&>ol]:list-decimal [&>ol]:pl-4 [&>h1]:text-sm [&>h1]:font-bold [&>h2]:text-xs [&>h2]:font-bold [&>h3]:text-xs [&>h3]:font-semibold [&>blockquote]:border-l-2 [&>blockquote]:border-emerald-500 [&>blockquote]:pl-2 [&>blockquote]:italic [&_strong]:text-emerald-300">
+                    <Markdown remarkPlugins={[remarkGfm]}>
+                      {m.content || (loading && idx === messages.length - 1 ? 'Thinking...' : '')}
+                    </Markdown>
+                  </div>
+                ) : (
+                  <div className="whitespace-pre-wrap break-words">{m.content}</div>
+                )}
                 
                 <div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-[#94A3B8] pt-1 border-t border-white/10">
                   <span>{m.timestamp}</span>

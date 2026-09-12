@@ -12,8 +12,14 @@ import {
   Check
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
+import { BackButton } from '../common/BackButton';
 
-export const NotesVault: React.FC = () => {
+interface NotesVaultProps {
+  onBack?: () => void;
+  setActiveTab?: (tab: string) => void;
+}
+
+export const NotesVault: React.FC<NotesVaultProps> = ({ onBack }) => {
   const { notes, books, deleteNote, addNote, openCoachWithPrompt } = useData();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBook, setSelectedBook] = useState<string>('all');
@@ -74,6 +80,7 @@ export const NotesVault: React.FC = () => {
       selectedText: newSelectedText.trim(),
       note: newNoteText.trim() || undefined,
       color: 'emerald',
+      type: 'note',
     });
 
     setShowAddModal(false);
@@ -85,13 +92,16 @@ export const NotesVault: React.FC = () => {
     <div className="space-y-8 pb-16">
       {/* Header */}
       <div className="flex flex-col justify-between gap-4 border-b border-emerald-950/40 pb-6 sm:flex-row sm:items-center">
-        <div>
-          <h1 className="font-serif text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Notes & Knowledge Vault
-          </h1>
-          <p className="mt-1 text-xs text-stone-400">
-            Synthesize golden passages, Stoic insights, and personalized marginalia into lasting wisdom.
-          </p>
+        <div className="flex flex-wrap items-center gap-3">
+          {onBack && <BackButton onClick={onBack} />}
+          <div>
+            <h1 className="font-serif text-3xl font-bold tracking-tight text-white sm:text-4xl">
+              Notes & Knowledge Vault
+            </h1>
+            <p className="mt-1 text-xs text-stone-400">
+              Synthesize golden passages, Stoic insights, and personalized marginalia into lasting wisdom.
+            </p>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">

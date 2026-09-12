@@ -14,12 +14,14 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
+import { BackButton } from '../common/BackButton';
 
 interface CategoriesViewProps {
   onSelectCategory?: (category: string) => void;
+  onBack?: () => void;
 }
 
-export const CategoriesView: React.FC<CategoriesViewProps> = ({ onSelectCategory }) => {
+export const CategoriesView: React.FC<CategoriesViewProps> = ({ onSelectCategory, onBack }) => {
   const { categories, books, openBookDetails } = useData();
 
   const iconMap: Record<string, any> = {
@@ -36,14 +38,17 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onSelectCategory
   };
 
   return (
-    <div className="space-y-8 pb-16">
-      <div>
-        <h1 className="font-serif text-3xl font-bold tracking-tight text-white sm:text-4xl">
-          Categories
-        </h1>
-        <p className="mt-1 text-xs text-stone-400">
-          Browse by intellectual discipline, philosophical framework, or habit dimension.
-        </p>
+    <div className="space-y-8 pb-16 font-sans">
+      <div className="flex flex-wrap items-center gap-3">
+        {onBack && <BackButton onClick={onBack} />}
+        <div>
+          <h1 className="font-serif text-3xl font-bold tracking-tight text-white sm:text-4xl">
+            Categories & Subjects
+          </h1>
+          <p className="mt-1 text-xs text-stone-400">
+            Browse by intellectual discipline, philosophical framework, or habit dimension.
+          </p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">

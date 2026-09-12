@@ -8,13 +8,8 @@ import {
   Share2,
   Check,
   Plus,
-  Play,
-  Pause,
-  Square,
   Sparkles,
   ArrowRight,
-  Headphones,
-  Volume2,
   ChevronRight
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
@@ -35,70 +30,26 @@ export const BookDetailsModal: React.FC = () => {
   const { theme } = useTheme();
 
   const [copiedLink, setCopiedLink] = useState(false);
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  const [audioSpeed, setAudioSpeed] = useState<1 | 1.25 | 1.5>(1.0);
 
   const book = books.find((b) => b.id === activeBookDetailsId);
 
-  const stopAudio = React.useCallback(() => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
-    setIsPlayingAudio(false);
-  }, []);
-
-  // Close on Escape key & cleanup on unmount
+  // Close on Escape key
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        stopAudio();
         closeBookDetails();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('keydown', onKey);
-      stopAudio();
     };
-  }, [closeBookDetails, stopAudio]);
+  }, [closeBookDetails]);
 
   if (!activeBookDetailsId || !book) return null;
 
   const libraryItem = library[book.id];
   const prog = readingProgress[book.id];
-
-  // Audio Playback handler using Web Speech Synthesis
-  const handleToggleListen = () => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-
-    if (isPlayingAudio) {
-      window.speechSynthesis.cancel();
-      setIsPlayingAudio(false);
-    } else {
-      window.speechSynthesis.cancel();
-      const chapterText = book.chapters?.[0]?.content || book.description;
-      const textToRead = `${book.title}। लेखक: ${book.author}। ${book.description}। ${chapterText}`;
-      const utterance = new SpeechSynthesisUtterance(textToRead);
-      utterance.lang = 'hi-IN';
-      utterance.rate = audioSpeed;
-      utterance.pitch = 1.0;
-      utterance.onend = () => setIsPlayingAudio(false);
-      utterance.onerror = () => setIsPlayingAudio(false);
-
-      window.speechSynthesis.speak(utterance);
-      setIsPlayingAudio(true);
-    }
-  };
-
-  const handleChangeSpeed = (newSpeed: 1 | 1.25 | 1.5) => {
-    setAudioSpeed(newSpeed);
-    if (isPlayingAudio) {
-      stopAudio();
-      setTimeout(() => {
-        handleToggleListen();
-      }, 100);
-    }
-  };
 
   const handleShare = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -107,7 +58,6 @@ export const BookDetailsModal: React.FC = () => {
   };
 
   const handleReadNow = (chapterPage?: number) => {
-    stopAudio();
     closeBookDetails();
     openReader(book.id);
   };
@@ -141,7 +91,6 @@ export const BookDetailsModal: React.FC = () => {
   return (
     <div
       onClick={() => {
-        stopAudio();
         closeBookDetails();
       }}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-6 backdrop-blur-xs cursor-pointer font-sans"
@@ -155,10 +104,9 @@ export const BookDetailsModal: React.FC = () => {
         {/* Close Button */}
         <button
           onClick={() => {
-            stopAudio();
             closeBookDetails();
           }}
-          className="absolute top-4 right-4 z-30 rounded-full p-2.5 bg-black/5 hover:bg-black/10 dark:bg-white/10 dark:hover:bg-white/20 transition-colors"
+          className="absolute top-4 right-4 z-30 rounded-full p-2.5 bg-black/5 hover:bg-black/10 dark:bg-white/10 dark:hover:bg-white/20 transition-colors cursor-pointer"
           aria-label="Close book details"
         >
           <X className="h-4 w-4" />
@@ -236,45 +184,23 @@ export const BookDetailsModal: React.FC = () => {
                 </div>
               )}
 
-              {/* Action Buttons: READ BOOK & LISTEN BOOK */}
+              {/* Action Buttons: READ BOOK */}
               <div className="mt-5 flex flex-wrap items-center justify-center sm:justify-start gap-2.5">
                 {/* 1. READ BOOK BUTTON */}
                 <button
                   onClick={() => handleReadNow()}
-                  className="group flex items-center gap-2 rounded-xl bg-[#1A1A1A] px-5 py-2.5 text-xs font-semibold text-[#FAF8F5] shadow-xs hover:bg-[#333] active:scale-95 transition-all"
+                  className="group flex items-center gap-2 rounded-xl bg-[#1A1A1A] px-5 py-2.5 text-xs font-semibold text-[#FAF8F5] shadow-xs hover:bg-[#333] active:scale-95 transition-all cursor-pointer"
                 >
                   <BookOpen className="h-4 w-4" />
                   <span>{prog ? 'Continue Reading' : 'Read Book'}</span>
                   <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
                 </button>
 
-                {/* 2. LISTEN BOOK BUTTON */}
-                <button
-                  onClick={handleToggleListen}
-                  className={`flex items-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-semibold transition-all ${
-                    isPlayingAudio
-                      ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                      : 'border-[#D8D4CA] bg-white text-[#1A1A1A] hover:bg-[#F2EFE9]'
-                  }`}
-                >
-                  {isPlayingAudio ? (
-                    <>
-                      <Square className="h-3.5 w-3.5 fill-white" />
-                      <span>Stop Audio</span>
-                    </>
-                  ) : (
-                    <>
-                      <Headphones className="h-3.5 w-3.5 text-amber-700" />
-                      <span>Listen Chapter</span>
-                    </>
-                  )}
-                </button>
-
                 {/* Library Toggle */}
                 {libraryItem ? (
                   <button
                     onClick={() => removeFromLibrary(book.id)}
-                    className="flex items-center gap-1.5 rounded-xl border border-[#D8D4CA] bg-white px-3.5 py-2.5 text-xs font-medium text-emerald-800"
+                    className="flex items-center gap-1.5 rounded-xl border border-[#D8D4CA] bg-white px-3.5 py-2.5 text-xs font-medium text-emerald-800 cursor-pointer"
                   >
                     <Check className="h-3.5 w-3.5 text-emerald-600" />
                     <span>In Library</span>
@@ -282,7 +208,7 @@ export const BookDetailsModal: React.FC = () => {
                 ) : (
                   <button
                     onClick={() => addToLibrary(book.id, 'currently-reading')}
-                    className="flex items-center gap-1.5 rounded-xl border border-[#D8D4CA] bg-white px-3.5 py-2.5 text-xs font-medium text-[#1A1A1A] hover:bg-[#F2EFE9]"
+                    className="flex items-center gap-1.5 rounded-xl border border-[#D8D4CA] bg-white px-3.5 py-2.5 text-xs font-medium text-[#1A1A1A] hover:bg-[#F2EFE9] cursor-pointer"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     <span>Save to Shelf</span>
@@ -292,7 +218,7 @@ export const BookDetailsModal: React.FC = () => {
                 {/* Share Button */}
                 <button
                   onClick={handleShare}
-                  className="rounded-xl border border-[#D8D4CA] bg-white p-2.5 text-[#555] hover:text-[#1A1A1A] transition"
+                  className="rounded-xl border border-[#D8D4CA] bg-white p-2.5 text-[#555] hover:text-[#1A1A1A] transition cursor-pointer"
                   title="Share book link"
                 >
                   <Share2 className="h-4 w-4" />
@@ -300,41 +226,6 @@ export const BookDetailsModal: React.FC = () => {
               </div>
             </div>
           </div>
-
-          {/* Active Audio Narration Bar */}
-          {isPlayingAudio && (
-            <div className="rounded-2xl border border-amber-500/40 bg-amber-50/80 dark:bg-amber-950/30 p-3.5 animate-in fade-in slide-in-from-top-2">
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="h-8 w-8 rounded-full bg-amber-700 flex items-center justify-center text-white">
-                    <Volume2 className="h-4 w-4 animate-pulse" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-semibold">Audio Narration Playing</h4>
-                    <p className="text-[11px] opacity-75 truncate max-w-xs">{book.title}</p>
-                  </div>
-                </div>
-
-                {/* Speed Controls */}
-                <div className="flex items-center gap-1 bg-white/60 dark:bg-black/40 px-2 py-1 rounded-xl border border-black/10 text-xs font-mono">
-                  <span className="text-[10px] opacity-60">Speed:</span>
-                  {([1, 1.25, 1.5] as const).map((spd) => (
-                    <button
-                      key={spd}
-                      onClick={() => handleChangeSpeed(spd)}
-                      className={`px-1.5 py-0.5 rounded-md transition ${
-                        audioSpeed === spd
-                          ? 'bg-amber-700 text-white font-bold'
-                          : 'opacity-70 hover:opacity-100'
-                      }`}
-                    >
-                      {spd}x
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Book Synopsis & Intro */}
           <div className={`rounded-2xl border ${getCardClasses()} p-5 space-y-3`}>

@@ -2,7 +2,6 @@ import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import { getFirestore, type Firestore } from 'firebase/firestore';
 import { getAuth, GoogleAuthProvider, type Auth } from 'firebase/auth';
 import { getStorage, type FirebaseStorage } from 'firebase/storage';
-import { getAnalytics, isSupported, type Analytics } from 'firebase/analytics';
 import firebaseConfigJson from '../../firebase-applet-config.json';
 
 const firebaseConfig = {
@@ -20,7 +19,7 @@ let db: Firestore;
 let auth: Auth;
 let storage: FirebaseStorage;
 let googleProvider: GoogleAuthProvider;
-let analytics: Analytics | null = null;
+const analytics = null;
 
 try {
   app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
@@ -34,17 +33,6 @@ try {
   storage = getStorage(app);
   googleProvider = new GoogleAuthProvider();
   googleProvider.setCustomParameters({ prompt: 'select_account' });
-
-  // Initialize analytics in browser if supported
-  if (typeof window !== 'undefined') {
-    isSupported().then((supported) => {
-      if (supported) {
-        analytics = getAnalytics(app);
-      }
-    }).catch(() => {
-      // Analytics not supported in this environment
-    });
-  }
 } catch (error) {
   console.error('Firebase initialization warning:', error);
 }
